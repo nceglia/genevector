@@ -17,7 +17,6 @@ import sys
 import os
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.neighbors import KernelDensity
-import networkx as nx
 import matplotlib.pyplot as plt
 
 

@@ -1,7 +1,6 @@
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
-from sklearn.cluster import KMeans, DBSCAN, OPTICS, AgglomerativeClustering, SpectralClustering
+from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
 import seaborn as sns

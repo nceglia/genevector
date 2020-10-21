@@ -19,8 +19,6 @@ import collections
 import sys
 import os
 
-import data
-
 class GeneEmbedding(object):
 
     def __init__(self, embedding_file, context):
@@ -55,10 +53,13 @@ class GeneEmbedding(object):
             distance = float(cosine_similarity(numpy.array(embedding).reshape(1, -1),numpy.array(v).reshape(1, -1))[0])
             distances[target] = distance
         sorted_distances = list(reversed(sorted(distances.items(), key=operator.itemgetter(1))))
-        return sorted_distances
+        genes = [x[0] for x in sorted_distances]
+        distance = [x[1] for x in sorted_distances]
+        df = pandas.DataFrame.from_dict({"Gene":genes, "Similarity":distance})
+        return df
 
-    def cluster(self):
-        kmeans = AgglomerativeClustering(n_clusters=36, affinity="cosine", linkage="average")
+    def cluster(self, n=12):
+        kmeans = AgglomerativeClustering(n_clusters=n, affinity="cosine", linkage="average")
         kmeans.fit(self.vector)
         clusters = kmeans.labels_
         clusters = zip(self.context.expressed_genes, clusters)
@@ -80,8 +81,8 @@ class GeneEmbedding(object):
         self.total_average_vector = list(numpy.average(total_average_vector, axis=0))
         for cluster, vectors in matrix.items():
             xvec = list(numpy.average(vectors, axis=0))
-            average_vector[cluster] = xvec
-            #average_vector[cluster] = numpy.subtract(xvec,self.total_average_vector)
+            #average_vector[cluster] = xvec
+            average_vector[cluster] = numpy.subtract(xvec,self.total_average_vector)
         return average_vector, gene_to_cluster
 
     def cluster_definitions(self, clusters):
@@ -130,19 +131,12 @@ class GeneEmbedding(object):
 
 class CellEmbedding(object):
 
-    def __init__(self, context, embed, adata, resolution=10):
+    def __init__(self, context, embed, adata):
         
         cell_to_gene = list(context.cell_to_gene.items())
-
         self.context = context
         self.embed = embed
-
-        self.celltypes = dict(zip(context.cells, context.metadata["cell_type"]))
-        self.samples = dict(zip(context.cells, context.metadata["sample"]))
-        
         self.expression = self.expression(adata)
-        # self.expression = pickle.load(open(""))
-
         self.data = collections.defaultdict(list)
         self.weights = collections.defaultdict(list)
 
@@ -156,35 +150,33 @@ class CellEmbedding(object):
                         if weight > 0:
                             self.data[cell].append(embed.embeddings[gene])
                             self.weights[cell].append(weight)
-        
         self.matrix = []
-        self.celltype = []
-        self.sample = []
-        
-        self.celltype_vector = collections.defaultdict(list)
-        self.sample_vector = collections.defaultdict(list)
-
         dataset_vector = []
         for cell, vectors in self.data.items():
             weights = self.weights[cell]
             xvec = list(numpy.average(vectors, axis=0, weights=weights))
             self.matrix.append(xvec)
-            self.sample.append(self.samples[cell])
-            self.celltype.append(self.celltypes[cell])
             dataset_vector += vectors
-            self.celltype_vector[self.celltypes[cell]] += vectors
-            self.sample_vector[self.samples[cell]].append(xvec)
+        
+        self.dataset_vector = numpy.average(dataset_vector, axis=0)
+        _matrix = []
+        for vec in self.matrix:
+            _matrix.append(numpy.subtract(vec, self.dataset_vector))
+        self.matrix = _matrix
 
-
-        self.clusters = self.cluster(k=resolution)
-        clusters = self.clusters
+    def batch_correct(self, column=None, clusters=None):
+        if not column or not clusters:
+            raise ValueError("Must supply batch column and clusters!")
+        column_labels = dict(zip(self.context.cells,self.context.metadata[column]))
+        labels = []
+        for key in self.data.keys():
+            labels.append(column_labels[key])
         local_correction = collections.defaultdict(lambda : collections.defaultdict(list))
         correction_vectors = collections.defaultdict(dict)
-        for cluster, batch, vec in zip(clusters, self.sample, self.matrix):
+        for cluster, batch, vec in zip(clusters, labels, self.matrix):
             local_correction[cluster][batch].append(vec)
         for cluster, batches in local_correction.items():
             cluster_vec = []
-            weights = []
             batch_keys = list(batches.keys())
             base_batch = batch_keys.pop(0)
             max_distance = 1.0
@@ -192,39 +184,25 @@ class CellEmbedding(object):
             for batch in batch_keys:
                 bvec = list(numpy.average(batches[batch], axis=0))
                 distance = float(cosine_similarity(numpy.array(bvec).reshape(1, -1),numpy.array(cluster_vec).reshape(1, -1))[0])
-                print(distance)
                 if max_distance > distance:
                     max_distance = distance
                 offset = numpy.subtract(cluster_vec,bvec)
                 bvec = numpy.add(bvec,offset)
                 distance = float(cosine_similarity(numpy.array(bvec).reshape(1, -1),numpy.array(cluster_vec).reshape(1, -1))[0])
-                print(distance)
-                _offset = []
                 correction_vectors[cluster][batch] = offset
 
-
         self.matrix = []
-        self.celltype_vector = collections.defaultdict(list)
         self.sample_vector = collections.defaultdict(list)
         i = 0
         for cell, vectors in self.data.items():
             cluster = clusters[i]
-            weights = self.weights[cell]
             xvec = list(numpy.average(vectors, axis=0))
-            batch = self.samples[cell]
-            # if cluster in correction_vectors and batch in correction_vectors[cluster]:
-            #     offset = correction_vectors[cluster][batch]
-            #     xvec = numpy.add(xvec,offset)
+            batch = column_labels[cell]
+            if cluster in correction_vectors and batch in correction_vectors[cluster]:
+                offset = correction_vectors[cluster][batch]
+                xvec = numpy.add(xvec,offset)
             self.matrix.append(xvec)
-            self.celltype_vector[self.celltypes[cell]] += vectors
-            self.sample_vector[self.samples[cell]].append(xvec)
             i += 1
-
-        self.dataset_vector = numpy.average(dataset_vector, axis=0)
-        _matrix = []
-        for vec in self.matrix:
-            _matrix.append(numpy.subtract(vec, self.dataset_vector))
-        self.matrix = _matrix
 
     def expression(self, adata):
         data = collections.defaultdict(dict)
@@ -233,8 +211,7 @@ class CellEmbedding(object):
         nonzero = (normalized_matrix > 0).nonzero()
         cells = adata.obs.index
         print("Loading Expression.")
-        nonzero_coords = list(zip(nonzero[0],nonzero[1]))
-        normalized_matrix = adata.X.todok()
+        nonzero_coords = list(zip(nonzero[0],nonzero[1]))   
         for cell, gene in tqdm.tqdm(nonzero_coords):
             symbol = genes[gene]
             barcode = cells[cell]
@@ -248,6 +225,7 @@ class CellEmbedding(object):
         _clusters = []
         for cluster in clusters:
             _clusters.append("C"+str(cluster))
+        self.clusters = _clusters
         return _clusters
 
     def compute_gene_similarities(self):
@@ -296,24 +274,46 @@ class CellEmbedding(object):
             cell_similarities[label] = distances
         return cell_similarities
 
-    def plot_tsne(self, ax, pcs=None, clusters=None, labels=None):
+    def plot_tsne(self, ax, pcs=None, method="TSNE", clusters=None, labels=None):
         if type(pcs) != numpy.ndarray:
-            pca = TSNE(n_components=2, n_jobs=-1, metric="cosine")
-            pcs = pca.fit_transform(self.matrix)
-            pcs = numpy.transpose(pcs)
-            print("TSNE DONE")
-            # trans = umap.UMAP(random_state=42).fit(self.matrix)
-            # x = trans.embedding_[:, 0]
-            # y = trans.embedding_[:, 1]
-            # pcs = [x,y]
+            if method == "TSNE":
+                print("Running t-SNE")
+                pca = TSNE(n_components=2, n_jobs=-1, metric="cosine")
+                pcs = pca.fit_transform(self.matrix)
+                pcs = numpy.transpose(pcs)
+                print("Finished.")
+            else:
+                print("Running UMAP")
+                trans = umap.UMAP(random_state=42).fit(self.matrix)
+                x = trans.embedding_[:, 0]
+                y = trans.embedding_[:, 1]
+                pcs = [x,y]
+                print("Finished.")
         data = {"x":pcs[0],"y":pcs[1],"Cluster": clusters}
         df = pandas.DataFrame.from_dict(data)
         sns.scatterplot(data=df,x="x", y="y", hue='Cluster', ax=ax,linewidth=0.00,s=7,alpha=0.7)
-        output = open('cells.tsv',"w")
-        output.write("barcode,cluster\n")
-        for barcode, cluster in zip(self.context.cells,clusters):
-            output.write("{},{}\n".format(barcode, cluster))
-        output.close()
+        return pcs
+    
+    def plot(self, png=None, pcs=None, method="TSNE", column=None):
+        if column:
+            column_labels = dict(zip(self.context.cells,self.context.metadata[column]))
+            labels = []
+            for key in self.data.keys():
+                labels.append(column_labels[key])
+        else:
+            labels = self.clusters
+        plt.figure(figsize = (6, 6))
+        ax1 = plt.subplot(1,1,1)
+        pcs = self.plot_tsne(ax1, pcs=pcs, clusters=labels)
+        plt.xlabel("{}-1".format(method))
+        plt.ylabel("{}-2".format(method))
+        ax1.set_xticks([])
+        ax1.set_yticks([])
+        if png:
+            plt.savefig(png)
+            plt.close()
+        else:
+            plt.show()
         return pcs
 
     def plot_gene_tsne(self, title, ax, genes, pcs=None):
@@ -332,72 +332,14 @@ class CellEmbedding(object):
         ax.set_title(title,fontsize=7)
         return pcs
 
-
-
-def main():
-    output_path = "./"
-    sample = "SPECTRUM-OV-002"
-    k = 10
-    adata = sc.read("spectrum002.h5ad")
-    context = data.Context.build(adata)
-
-    
-    # adata = adata.raw.to_adata()
-    embed = GeneEmbedding("out.vec", context)
-    print(embed.compute_similarities("CD8A")[:20])
-    print("Clustering.")
-    clusters = embed.cluster()
-
-    print("Generating Representative Genes.")
-    embed.plot(clusters, png="genes.png", labels=["CD8A","CD8B","GNLY","IFNG","CD3E","CD3D","CD2","CD7"])
-    gene_clusters = embed.cluster_definitions(clusters)
-
-
-    print("Building Cell Embedding...")
-    cembed = CellEmbedding(context, embed, adata, resolution=k)
-
-    plt.figure(figsize = (12, 6))
-    ax1 = plt.subplot(1,2,1)
-    pcs = cembed.plot_tsne(ax1, clusters=cembed.celltype)
-    plt.xlabel("TSNE-1")
-    plt.ylabel("TSNE-2")
-    ax1.set_xticks([])
-    ax1.set_yticks([])
-
-    ax3 = plt.subplot(1,2,2)
-    cembed.plot_tsne(ax3, clusters=cembed.sample,pcs=pcs)
-
-    ax1.legend(fontsize='8')
-    ax3.legend(fontsize='8')
-    plt.xlabel("TSNE-1")
-    plt.ylabel("TSNE-2")
-    plt.savefig(os.path.join(output_path,"qcelltypes_{}.png".format(sample,k)))
-    
-    ax3.set_xticks([])
-    ax3.set_yticks([])
-    plt.close()
-
-    # gclusters = list(gene_clusters.keys())
-    
- 
-    exit(0)
-
-    # cembed.compute_gene_similarities()
-
-    # plt.figure(figsize = (40, 40))
-    # ctypes = cembed.compute_cell_similarities(cembed.tissues)
-    # labels = list(ctypes.keys())
-    # matrix = []
-    # for cell1 in labels:
-    #     row = []
-    #     for cell2 in labels:
-    #         row.append(ctypes[cell1][cell2])
-    #     matrix.append(row)
-    # matrix = numpy.array(matrix)
-    # df = pandas.DataFrame(matrix,index=labels,columns=labels)
-    # sns.clustermap(df,figsize=(17,8))
-    # plt.tight_layout()
-    # plt.savefig(os.path.join(output_path,"tissue_similarities_{}.png".format(sample)))
-
-if __name__ == '__main__':
-    main()
+    def plot_gene_expression(self, genes, pcs=None, png=None):
+        plt.figure(figsize = (8,8))
+        ax = plt.subplot(1,1, 1)
+        self.plot_gene_tsne(",".join(genes[:10]), ax, genes, pcs=pcs)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        if not png:
+            plt.show()
+        else:
+            plt.savefig(png)
+            plt.close()

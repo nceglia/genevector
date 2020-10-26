@@ -18,6 +18,8 @@ import os
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.neighbors import KernelDensity
 import matplotlib.pyplot as plt
+from collections import Counter
+from scipy import stats
 
 
 class Context(object):
@@ -27,6 +29,10 @@ class Context(object):
 
     @classmethod
     def build(context_class, adata, subsample=None):
+        try:
+            adata.var.index = [x.decode("utf-8") for x in adata.var.index]
+        except Exception as e:
+            pass
         context = context_class()
         if subsample:
             sc.pp.subsample(adata,fraction=subsample)
@@ -34,11 +40,17 @@ class Context(object):
         context.genes = [x.upper() for x in list(context.adata.var.index)]
         context.normalized_matrix = context.adata.X
         context.metadata = context.adata.obs
+        try:
+            for column in context.metadata.columns:
+                if type(context.metadata[column][0]) == bytes:
+                    context.metadata[column] = [x.decode("utf-8") for x in context.metadata[column]]
+        except Exception as e:
+            pass
         context.cells = context.adata.obs.index
         context.cell_index, context.index_cell = Context.index_cells(context.cells)
         context.data, context.cell_to_gene = context.expression(context.normalized_matrix, \
-                                                                context.genes, \
-                                                                context.index_cell)
+                            context.genes, \
+                            context.index_cell)
         context.expressed_genes = context.get_expressed_genes(context.data)
         context.gene_index, context.index_gene = Context.index_geneset(context.expressed_genes)
         context.negatives = []
@@ -49,8 +61,7 @@ class Context(object):
         context.id2gene = context.index_gene
         context.gene_count = len(context.gene_frequency.keys())
         context.adata = adata
-        context.initTableNegatives()
-        context.initTableDiscards()
+        context.init_negative_table()
         return context
 
     @classmethod
@@ -102,16 +113,22 @@ class Context(object):
 
     def expression(self, normalized_matrix, genes, cells):
         gene_index, index_gene = Context.index_geneset(genes)
+        self.expression = collections.defaultdict(dict)
         nonzero = (normalized_matrix > 0).nonzero()
-        data = collections.defaultdict(list)
-        entries = list(zip(nonzero[0],nonzero[1]))
+        print("Loading Expression.")
+        nonzero_coords = list(zip(nonzero[0],nonzero[1]))
         self.gene_frequency = collections.defaultdict(int)
-        for cell, gene in tqdm.tqdm(entries):
-            symbol = index_gene[gene]
-            if not Context.filter_gene(symbol):
-                barcode = cells[cell]
-                data[symbol].append(barcode)
-                self.gene_frequency[symbol] += 1
+        data = collections.defaultdict(list)
+        nonzero_cells = list(set(nonzero[0]))
+        for cell in tqdm.tqdm(nonzero_cells):
+            barcode = cells[cell]
+            row = normalized_matrix.getrow(cell)
+            for index in row.nonzero()[1]:
+                symbol = index_gene[index]
+                if not Context.filter_gene(symbol):
+                    self.expression[barcode][symbol] = row[0,index]
+                    data[symbol].append(barcode)
+                    self.gene_frequency[symbol] += 1
         data = self.filter_on_frequency(data)
         return data, self.inverse_filter(data)
 
@@ -140,23 +157,16 @@ class Context(object):
         serialized = self.serialize()
         pickle.dump(serialized, open(filename,"wb"))
 
-    def initTableDiscards(self):
-        t = 0.0001
-        f = np.array(list(self.gene_frequency.values())) / self.gene_count
-        f = f.reshape(-1,1)
-        kde = KernelDensity(kernel='gaussian', bandwidth=0.2).fit(f)
-        scores = kde.score_samples(f)
-        scaler = MinMaxScaler(feature_range=(0,0.10))
-        scores = scaler.fit_transform(scores.reshape(-1,1))
-        self.discards = [x[0] for x in scores.tolist()]
-
     def frequency_histogram(self):
-        f = np.array(list(self.gene_frequency.values())) / self.gene_count
+        f = np.array(list(self.gene_frequency.values())) / len(self.cells)
         plt.hist(f, 200, density=True, facecolor='g', alpha=0.75)
         plt.grid(True)
         plt.show()
 
-    def initTableNegatives(self):
+    def frequency(self, gene):
+        return self.gene_frequency[gene] / len(self.cells)
+
+    def init_negative_table(self):
         pow_frequency = np.array(list(self.gene_frequency.values())) ** 0.75
         words_pow = sum(pow_frequency)
         ratio = pow_frequency / words_pow
@@ -166,7 +176,7 @@ class Context(object):
         self.negatives = np.array(self.negatives)
         np.random.shuffle(self.negatives)
 
-    def getNegatives(self, target, size):
+    def get_negative_targets(self, target, size):
         response = self.negatives[self.negpos:self.negpos + size]
         self.negpos = (self.negpos + size) % len(self.negatives)
         if len(response) != size:
@@ -175,7 +185,7 @@ class Context(object):
 
 class CompassDataset(Dataset):
 
-    def __init__(self, data):
+    def __init__(self, data, discard_probability=0.1):
         self.data = data
 
     def __len__(self):
@@ -184,9 +194,9 @@ class CompassDataset(Dataset):
     def __getitem__(self, idx):
         cell_id = self.data.index_cell[idx]
         genes = self.data.cell_to_gene[cell_id]
-        word_ids = [self.data.gene2id[w] for w in genes if w in self.data.gene2id and np.random.rand() < self.data.discards[self.data.gene2id[w]]]
+        word_ids = [self.data.gene2id[w] for w in genes if w in self.data.gene2id and np.random.rand() < 0.1]
         idx_pairs = list(permutations(word_ids,2))
-        return [(u, v, self.data.getNegatives(v, 5)) for u, v in idx_pairs if u != v]
+        return [(u, v, self.data.get_negative_targets(v, 5)) for u, v in idx_pairs if u != v]
 
     @staticmethod
     def collate(batches):

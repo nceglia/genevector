@@ -44,10 +44,10 @@ class SkipGramModel(nn.Module):
                 e = ' '.join(map(lambda x: str(x), embedding[wid]))
                 f.write('%s %s\n' % (w, e))
 
-class Compass(object):
+class CompassTrainer(object):
     def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01):
         self.dataset = dataset
-        self.dataloader = DataLoader(self.dataset, batch_size=batch_size, shuffle=True, num_workers=4, collate_fn=dataset.collate)
+        self.dataloader = DataLoader(self.dataset, batch_size=batch_size, shuffle=True, num_workers=0, collate_fn=dataset.collate)
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension
@@ -69,7 +69,7 @@ class Compass(object):
                 if len(sample_batched[0]) > 1:
                     pos_u = sample_batched[0].to(self.device)
                     pos_v = sample_batched[1].to(self.device)
-                    neg_v = sample_batched[2].to(self.device)                 
+                    neg_v = sample_batched[2].to(self.device)
                     optimizer.zero_grad()
                     loss = self.skip_gram_model.forward(pos_u, pos_v, neg_v)
                     loss.backward()

@@ -1,6 +1,6 @@
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.manifold import TSNE
-from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -27,9 +27,11 @@ class GeneEmbedding(object):
         self.embedding_file = embedding_file
         self.embeddings = self.read_embedding(self.embedding_file)
         self.vector = []
+        self.genes = []
         for gene in tqdm.tqdm(self.context.expressed_genes):
             if gene in self.embeddings:
                 self.vector.append(self.embeddings[gene])
+                self.genes.append(gene)
 
     def read_embedding(self, filename):
         embedding = dict()
@@ -46,7 +48,7 @@ class GeneEmbedding(object):
         embedding = self.embeddings[gene]
         distances = dict()
         for target in self.embeddings.keys():
-            if target not in self.embeddings: 
+            if target not in self.embeddings:
                 continue
             v = self.embeddings[target]
             distance = float(cosine_similarity(numpy.array(embedding).reshape(1, -1),numpy.array(v).reshape(1, -1))[0])
@@ -58,7 +60,7 @@ class GeneEmbedding(object):
         return df
 
     def cluster(self, n=12):
-        kmeans = AgglomerativeClustering(n_clusters=n, affinity="cosine", linkage="average")
+        kmeans = KMeans(n_clusters=n)
         kmeans.fit(self.vector)
         clusters = kmeans.labels_
         clusters = zip(self.context.expressed_genes, clusters)
@@ -80,9 +82,15 @@ class GeneEmbedding(object):
         self.total_average_vector = list(numpy.average(total_average_vector, axis=0))
         for cluster, vectors in matrix.items():
             xvec = list(numpy.average(vectors, axis=0))
-            #average_vector[cluster] = xvec
             average_vector[cluster] = numpy.subtract(xvec,self.total_average_vector)
         return average_vector, gene_to_cluster
+
+    def generate_vector(self, genes):
+        vector = []
+        for gene, vec in zip(self.genes, self.vector):
+            if gene in genes:
+                vector.append(vec)
+        return list(numpy.median(vector, axis=0))
 
     def cluster_definitions(self, clusters):
         average_vector, gene_to_cluster = self.clusters(clusters)
@@ -95,9 +103,18 @@ class GeneEmbedding(object):
                 distances[target] = distance
             sorted_distances = list(reversed(sorted(distances.items(), key=operator.itemgetter(1))))
             similarities[cluster] = [x[0] for x in sorted_distances if x[0]]
-            print(cluster, similarities[cluster][:15])
+            # print(cluster, similarities[cluster][:15])
         return similarities
-    
+
+    def cluster_definitions_as_df(self, similarities, top_n=20):
+        clusters = []
+        symbols = []
+        for key, genes in similarities.items():
+            clusters.append(key)
+            symbols.append(", ".join(genes[:top_n]))
+        df = pandas.DataFrame.from_dict({"Cluster Name":clusters, "Top Genes":symbols})
+        return df
+
     def plot(self, clusters, png=None, method="TSNE", labels=[]):
         plt.figure(figsize = (8, 8))
         ax = plt.subplot(1,1,1)
@@ -128,14 +145,32 @@ class GeneEmbedding(object):
                 if gene in labels:
                     ax.text(x+.02, y, str(gene), fontsize=8)
 
+    def subtract_vector(self, vector):
+        for gene, vec in self.embeddings.items():
+            vec = numpy.subtract(vec-vector)
+            self.embeddings[gene] = vec
+
+    @staticmethod
+    def relabel_cluster(similarities, clusters, old_label, new_label):
+        genes = similarities[old_label]
+        del similarities[old_label]
+        similarities[new_label] = genes
+        _clusters = []
+        for cluster in clusters:
+            if cluster == old_label:
+                _clusters.append(new_label)
+            else:
+                _clusters.append(cluster)
+        return similarities, _clusters
+
 class CellEmbedding(object):
 
-    def __init__(self, context, embed, adata):
-        
+    def __init__(self, context, embed):
+
         cell_to_gene = list(context.cell_to_gene.items())
         self.context = context
         self.embed = embed
-        self.expression = self.expression(adata)
+        self.expression = context.expression
         self.data = collections.defaultdict(list)
         self.weights = collections.defaultdict(list)
 
@@ -156,7 +191,7 @@ class CellEmbedding(object):
             xvec = list(numpy.average(vectors, axis=0, weights=weights))
             self.matrix.append(xvec)
             dataset_vector += vectors
-        
+
         self.dataset_vector = numpy.average(dataset_vector, axis=0)
         _matrix = []
         for vec in self.matrix:
@@ -193,6 +228,7 @@ class CellEmbedding(object):
         self.matrix = []
         self.sample_vector = collections.defaultdict(list)
         i = 0
+        self.cell_order = []
         for cell, vectors in self.data.items():
             cluster = clusters[i]
             xvec = list(numpy.average(vectors, axis=0))
@@ -201,24 +237,11 @@ class CellEmbedding(object):
                 offset = correction_vectors[cluster][batch]
                 xvec = numpy.add(xvec,offset)
             self.matrix.append(xvec)
+            self.cell_order.append(cell)
             i += 1
 
-    def expression(self, adata):
-        data = collections.defaultdict(dict)
-        genes = [x.upper() for x in adata.var.index]
-        normalized_matrix = adata.X
-        nonzero = (normalized_matrix > 0).nonzero()
-        cells = adata.obs.index
-        print("Loading Expression.")
-        nonzero_coords = list(zip(nonzero[0],nonzero[1]))   
-        for cell, gene in tqdm.tqdm(nonzero_coords):
-            symbol = genes[gene]
-            barcode = cells[cell]
-            data[barcode][symbol] = normalized_matrix[cell,gene]
-        return data
-
     def cluster(self, k=12):
-        kmeans = AgglomerativeClustering(n_clusters=k)
+        kmeans = KMeans(n_clusters=k)
         kmeans.fit(self.matrix)
         clusters = kmeans.labels_
         _clusters = []
@@ -227,6 +250,12 @@ class CellEmbedding(object):
         self.clusters = _clusters
         return _clusters
 
+    def subtract_vector(self, vector):
+        corrected_matrix = []
+        for cell_vector in self.matrix:
+            corrected_matrix.append(numpy.subtract(cell_vector, vector))
+        self.matrix = corrected_matrix
+
     def compute_gene_similarities(self):
         gene_similarities = dict()
         vectors = collections.defaultdict(list)
@@ -234,7 +263,7 @@ class CellEmbedding(object):
             vectors[label].append(vec)
         for label, vecs in vectors.items():
             distances = dict()
-            cell_vector = list(numpy.median(vecs, axis=0))
+            cell_vector = list(numpy.mean(vecs, axis=0))
             for gene, vector in self.embed.embeddings.items():
                 distance = float(cosine_similarity(numpy.array(cell_vector).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
                 distances[gene] = distance
@@ -292,7 +321,7 @@ class CellEmbedding(object):
         df = pandas.DataFrame.from_dict(data)
         sns.scatterplot(data=df,x="x", y="y", hue='Cluster', ax=ax,linewidth=0.00,s=7,alpha=0.7)
         return pcs
-    
+
     def plot(self, png=None, pcs=None, method="TSNE", column=None):
         if column:
             column_labels = dict(zip(self.context.cells,self.context.metadata[column]))
@@ -301,7 +330,7 @@ class CellEmbedding(object):
                 labels.append(column_labels[key])
         else:
             labels = self.clusters
-        plt.figure(figsize = (6, 6))
+        plt.figure(figsize = (8, 8))
         ax1 = plt.subplot(1,1,1)
         pcs = self.plot_tsne(ax1, pcs=pcs, clusters=labels)
         plt.xlabel("{}-1".format(method))
@@ -313,6 +342,23 @@ class CellEmbedding(object):
             plt.close()
         else:
             plt.show()
+        return pcs
+
+    def plot_distance(self, vector, pcs=None):
+        plt.figure(figsize = (8,8))
+        ax = plt.subplot(1,1, 1)
+        if type(pcs) != numpy.ndarray:
+            pca = TSNE(n_components=2)
+            pcs = pca.fit_transform(self.matrix)
+            pcs = numpy.transpose(pcs)
+        distances = []
+        dataset_distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(self.dataset_vector).reshape(1, -1))[0])
+        for cell_vector in self.matrix:
+            distance = float(cosine_similarity(numpy.array(cell_vector).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
+            distances.append(distance-dataset_distance)
+        data = {"x":pcs[0],"y":pcs[1],"Distance": distances}
+        df = pandas.DataFrame.from_dict(data)
+        sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7,legend=False)
         return pcs
 
     def plot_gene_tsne(self, title, ax, genes, pcs=None):
@@ -334,7 +380,7 @@ class CellEmbedding(object):
     def plot_gene_expression(self, genes, pcs=None, png=None):
         plt.figure(figsize = (8,8))
         ax = plt.subplot(1,1, 1)
-        self.plot_gene_tsne(",".join(genes[:10]), ax, genes, pcs=pcs)
+        pcs = self.plot_gene_tsne(",".join(genes[:10]), ax, genes, pcs=pcs)
         ax.set_xticks([])
         ax.set_yticks([])
         if not png:
@@ -342,3 +388,4 @@ class CellEmbedding(object):
         else:
             plt.savefig(png)
             plt.close()
+        return pcs

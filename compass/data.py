@@ -62,6 +62,7 @@ class Context(object):
         context.gene_count = len(context.gene_frequency.keys())
         context.adata = adata
         context.init_negative_table()
+        context.idx_pairs = context.coexpression()
         return context
 
     @classmethod
@@ -183,20 +184,39 @@ class Context(object):
             return np.concatenate((response, self.negatives[0:self.negpos]))
         return response
 
+    def coexpression(self, min_pair_num=10, max_pair_num=1000):
+        idx_pairs = collections.defaultdict(int)
+        for cell, genes in tqdm.tqdm(self.cell_to_gene.items()):
+            pairs = list(permutations(genes,2))
+            pairs = [(self.gene_index[pair[0]],self.gene_index[pair[1]]) for pair in pairs if pair[0] != pair[1]]
+            for pair in pairs:
+                idx_pairs[pair] += 1
+        return idx_pairs
+
 class CompassDataset(Dataset):
 
-    def __init__(self, data, discard_probability=0.1):
+    def __init__(self, data, discard_probability=0.1, negative_targets=5):
         self.data = data
+        self.pair_frequency = self.data.idx_pairs
+        self.negative_targets = negative_targets
+        self.discard_probability = discard_probability
 
     def __len__(self):
         return len(self.data.cells)
+    
+    def update_discard_probability(self, probability):
+        self.discard_probability = probability
+    
+    def update_negative_targets(self, negative_targets):
+        self.negative_targets = negative_targets
 
     def __getitem__(self, idx):
         cell_id = self.data.index_cell[idx]
         genes = self.data.cell_to_gene[cell_id]
-        word_ids = [self.data.gene2id[w] for w in genes if w in self.data.gene2id and np.random.rand() < 0.1]
+        word_ids = [self.data.gene2id[w] for w in genes if w in self.data.gene2id]
         idx_pairs = list(permutations(word_ids,2))
-        return [(u, v, self.data.get_negative_targets(v, 5)) for u, v in idx_pairs if u != v]
+        idx_pairs = [pair for pair in idx_pairs if np.random.rand() < 1.0 / self.pair_frequency[pair]]
+        return [(u, v, self.data.get_negative_targets(v, self.negative_targets)) for u, v in idx_pairs if u != v]
 
     @staticmethod
     def collate(batches):

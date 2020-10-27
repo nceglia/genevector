@@ -103,7 +103,6 @@ class GeneEmbedding(object):
                 distances[target] = distance
             sorted_distances = list(reversed(sorted(distances.items(), key=operator.itemgetter(1))))
             similarities[cluster] = [x[0] for x in sorted_distances if x[0]]
-            # print(cluster, similarities[cluster][:15])
         return similarities
 
     def cluster_definitions_as_df(self, similarities, top_n=20):
@@ -115,27 +114,32 @@ class GeneEmbedding(object):
         df = pandas.DataFrame.from_dict({"Cluster Name":clusters, "Top Genes":symbols})
         return df
 
-    def plot(self, clusters, png=None, method="TSNE", labels=[]):
+    def plot(self, clusters, png=None, method="TSNE", labels=[], pcs=None):
         plt.figure(figsize = (8, 8))
         ax = plt.subplot(1,1,1)
-        self.plot_reduction(clusters, ax, labels=labels)
+        pcs = self.plot_reduction(clusters, ax, labels=labels, method=method, pcs=pcs)
         if png:
             plt.savefig(png)
             plt.close()
         else:
             plt.show()
+        return pcs
 
-    def plot_reduction(self, clusters, ax, method="TSNE", labels=[]):
-        if method == "TSNE":
-            pca = TSNE(n_components=2, metric="cosine")
-            pcs = pca.fit_transform(self.vector)
-        elif method == "UMAP":
-            trans = umap.UMAP(random_state=42).fit(self.matrix)
-            x = trans.embedding_[:, 0]
-            y = trans.embedding_[:, 1]
-            pcs = [x,y]
-        else:
-            raise ValueError("Method '{}' not supported!".format(method))
+    def plot_reduction(self, clusters, ax, method="TSNE", labels=[], pcs=None):
+        if type(pcs) != numpy.ndarray:
+            if method == "TSNE":
+                print("Running t-SNE")
+                pca = TSNE(n_components=2, n_jobs=-1, metric="cosine")
+                pcs = pca.fit_transform(self.vector)
+                pcs = numpy.transpose(pcs)
+                print("Finished.")
+            else:
+                print("Running UMAP")
+                trans = umap.UMAP(random_state=42,metric='cosine').fit(self.vector)
+                x = trans.embedding_[:, 0]
+                y = trans.embedding_[:, 1]
+                pcs = [x,y]
+                print("Finished.")
         pcs = numpy.transpose(pcs)
         data = {"x":pcs[0],"y":pcs[1], "Cluster":clusters}
         df = pandas.DataFrame.from_dict(data)
@@ -144,6 +148,7 @@ class GeneEmbedding(object):
             for x, y, gene in zip(pcs[0], pcs[1], self.context.expressed_genes):
                 if gene in labels:
                     ax.text(x+.02, y, str(gene), fontsize=8)
+        return pcs
 
     def subtract_vector(self, vector):
         for gene, vec in self.embeddings.items():
@@ -302,7 +307,7 @@ class CellEmbedding(object):
             cell_similarities[label] = distances
         return cell_similarities
 
-    def plot_tsne(self, ax, pcs=None, method="TSNE", clusters=None, labels=None):
+    def plot_reduction(self, ax, pcs=None, method="TSNE", clusters=None, labels=None):
         if type(pcs) != numpy.ndarray:
             if method == "TSNE":
                 print("Running t-SNE")
@@ -312,7 +317,7 @@ class CellEmbedding(object):
                 print("Finished.")
             else:
                 print("Running UMAP")
-                trans = umap.UMAP(random_state=42).fit(self.matrix)
+                trans = umap.UMAP(random_state=42,metric='cosine').fit(self.matrix)
                 x = trans.embedding_[:, 0]
                 y = trans.embedding_[:, 1]
                 pcs = [x,y]
@@ -332,7 +337,7 @@ class CellEmbedding(object):
             labels = self.clusters
         plt.figure(figsize = (8, 8))
         ax1 = plt.subplot(1,1,1)
-        pcs = self.plot_tsne(ax1, pcs=pcs, clusters=labels)
+        pcs = self.plot_reduction(ax1, pcs=pcs, clusters=labels, method=method)
         plt.xlabel("{}-1".format(method))
         plt.ylabel("{}-2".format(method))
         ax1.set_xticks([])
@@ -374,7 +379,7 @@ class CellEmbedding(object):
         data = {"x":pcs[0],"y":pcs[1],"Gene Expression": expression}
         df = pandas.DataFrame.from_dict(data)
         sns.scatterplot(data=df,x="x", y="y", hue='Gene Expression', ax=ax,linewidth=0.00,s=7,alpha=0.7,legend=False)
-        ax.set_title(title,fontsize=7)
+        ax.set_title(title,fontsize=16)
         return pcs
 
     def plot_gene_expression(self, genes, pcs=None, png=None):

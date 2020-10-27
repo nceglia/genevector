@@ -58,12 +58,19 @@ class CompassTrainer(object):
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
         if self.use_cuda:
             self.skip_gram_model.cuda()
+    
+    def create_dataloader(self, dataset):
+        return DataLoader(dataset, batch_size=self.batch_size, shuffle=True, num_workers=0, collate_fn=dataset.collate)
 
-    def train(self, iterations):
+    def train(self, iterations, lr=None, negative_targets=5, discard_probability=0.05):
         for iteration in range(iterations):
             print("Epoch: {}".format(iteration+1))
-            optimizer = optim.SparseAdam(self.skip_gram_model.parameters(), lr=self.initial_lr)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, len(self.dataloader))
+            if not lr:
+                lr = self.initial_lr
+            optimizer = optim.SparseAdam(self.skip_gram_model.parameters(), lr=lr)
+            self.dataset.update_discard_probability(discard_probability)
+            self.dataset.update_negative_targets(negative_targets)
+            self.dataloader = self.create_dataloader(self.dataset)
             running_loss = 0.0
             for i, sample_batched in enumerate(tqdm(self.dataloader)):
                 if len(sample_batched[0]) > 1:
@@ -74,7 +81,6 @@ class CompassTrainer(object):
                     loss = self.skip_gram_model.forward(pos_u, pos_v, neg_v)
                     loss.backward()
                     optimizer.step()
-                    scheduler.step()
                     running_loss =+ loss.item()
             print("Loss:", running_loss)
             self.skip_gram_model.save_embedding(self.dataset.data.id2gene, self.output_file_name)

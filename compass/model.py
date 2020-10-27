@@ -54,7 +54,8 @@ class CompassTrainer(object):
         self.batch_size = batch_size
         self.initial_lr = initial_lr
         self.skip_gram_model = SkipGramModel(self.emb_size, self.emb_dimension)
-        self.use_cuda = torch.cuda.is_available()
+        #self.use_cuda = torch.cuda.is_available()
+        self.use_cuda = False
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
         if self.use_cuda:
             self.skip_gram_model.cuda()

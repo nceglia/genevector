@@ -218,8 +218,9 @@ class CompassDataset(Dataset):
     def __getitem__(self, idx):
         cell_id = self.data.index_cell[idx]
         genes = self.data.cell_to_gene[cell_id]
-        word_ids = [self.data.gene2id[w] for w in genes if w in self.data.gene2id and np.random.rand() < self.discard_probability]
+        word_ids = [self.data.gene2id[w] for w in genes if w in self.data.gene2id]
         idx_pairs = list(permutations(word_ids,2))
+        idx_pairs = [pair for pair in idx_pairs if np.random.rand() < self.discard_probability]
         return [(u, v, self.data.get_negative_targets(v, 5)) for u, v in idx_pairs if u != v]
 
     @staticmethod

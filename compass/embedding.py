@@ -323,7 +323,7 @@ class CellEmbedding(object):
                 print("Finished.")
         data = {"x":pcs[0],"y":pcs[1],"Cluster": clusters}
         df = pandas.DataFrame.from_dict(data)
-        sns.scatterplot(data=df,x="x", y="y", hue='Cluster', ax=ax,linewidth=0.00,s=7,alpha=0.7)
+        sns.scatterplot(data=df,x="x", y="y", hue='Cluster', ax=ax,linewidth=0.1,s=13,alpha=1.0)
         return pcs
 
     def plot(self, png=None, pcs=None, method="TSNE", column=None):
@@ -362,7 +362,7 @@ class CellEmbedding(object):
             distances.append(distance-dataset_distance)
         data = {"x":pcs[0],"y":pcs[1],"Distance": distances}
         df = pandas.DataFrame.from_dict(data)
-        sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7,legend=False)
+        sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7)
         return pcs
 
     def plot_gene_tsne(self, title, ax, genes, pcs=None):

@@ -40,6 +40,7 @@ class Context(object):
         context.genes = [x.upper() for x in list(context.adata.var.index)]
         context.normalized_matrix = context.adata.X
         context.metadata = context.adata.obs
+        context.frequency_lower_bound = 1
         try:
             for column in context.metadata.columns:
                 if type(context.metadata[column][0]) == bytes:
@@ -62,7 +63,8 @@ class Context(object):
         context.gene_count = len(context.gene_frequency.keys())
         context.adata = adata
         context.init_negative_table()
-        context.idx_pairs = context.coexpression()
+        # context.idx_pairs = context.coexpression()
+        
         return context
 
     @classmethod
@@ -97,6 +99,9 @@ class Context(object):
             for cell in cells:
                 cell_to_gene[cell].append(gene)
         return cell_to_gene
+    
+    def set_lower_bound_on_frequency(self, frequency):
+        self.frequency_lower_bound = frequency
 
     @staticmethod
     def filter_gene(symbol):
@@ -136,7 +141,7 @@ class Context(object):
     def filter_on_frequency(self, data):
         remove = []
         for gene, frequency in self.gene_frequency.items():
-            if frequency < 100:
+            if frequency < self.frequency_lower_bound:
                 del data[gene]
                 remove.append(gene)
         for gene in remove:
@@ -184,20 +189,20 @@ class Context(object):
             return np.concatenate((response, self.negatives[0:self.negpos]))
         return response
 
-    def coexpression(self, min_pair_num=10, max_pair_num=1000):
-        idx_pairs = collections.defaultdict(int)
-        for cell, genes in tqdm.tqdm(self.cell_to_gene.items()):
-            pairs = list(permutations(genes,2))
-            pairs = [(self.gene_index[pair[0]],self.gene_index[pair[1]]) for pair in pairs if pair[0] != pair[1]]
-            for pair in pairs:
-                idx_pairs[pair] += 1
-        return idx_pairs
+    # def coexpression(self, min_pair_num=10, max_pair_num=1000):
+    #     idx_pairs = collections.defaultdict(int)
+    #     for cell, genes in tqdm.tqdm(self.cell_to_gene.items()):
+    #         pairs = list(permutations(genes,2))
+    #         pairs = [(self.gene_index[pair[0]],self.gene_index[pair[1]]) for pair in pairs if pair[0] != pair[1]]
+    #         for pair in pairs:
+    #             if idx_pairs[pair] < max_pair_num:
+    #                 idx_pairs[pair] += 1
+    #     return idx_pairs
 
 class CompassDataset(Dataset):
 
     def __init__(self, data, discard_probability=0.1, negative_targets=5):
         self.data = data
-        self.pair_frequency = self.data.idx_pairs
         self.negative_targets = negative_targets
         self.discard_probability = discard_probability
 
@@ -213,10 +218,9 @@ class CompassDataset(Dataset):
     def __getitem__(self, idx):
         cell_id = self.data.index_cell[idx]
         genes = self.data.cell_to_gene[cell_id]
-        word_ids = [self.data.gene2id[w] for w in genes if w in self.data.gene2id]
+        word_ids = [self.data.gene2id[w] for w in genes if w in self.data.gene2id and np.random.rand() < self.discard_probability]
         idx_pairs = list(permutations(word_ids,2))
-        idx_pairs = [pair for pair in idx_pairs if np.random.rand() < 1.0 / self.pair_frequency[pair]]
-        return [(u, v, self.data.get_negative_targets(v, self.negative_targets)) for u, v in idx_pairs if u != v]
+        return [(u, v, self.data.get_negative_targets(v, 5)) for u, v in idx_pairs if u != v]
 
     @staticmethod
     def collate(batches):

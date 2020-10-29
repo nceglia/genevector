@@ -140,7 +140,6 @@ class GeneEmbedding(object):
                 y = trans.embedding_[:, 1]
                 pcs = [x,y]
                 print("Finished.")
-        pcs = numpy.transpose(pcs)
         data = {"x":pcs[0],"y":pcs[1], "Cluster":clusters}
         df = pandas.DataFrame.from_dict(data)
         sns.scatterplot(data=df,x="x", y="y",hue="Cluster", ax=ax)

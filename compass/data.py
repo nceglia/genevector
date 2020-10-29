@@ -219,7 +219,7 @@ class CompassDataset(Dataset):
         cell_id = self.data.index_cell[idx]
         genes = self.data.cell_to_gene[cell_id]
         markers = "CD79A, MS4A1, GNLY, NKG7, CST3, LYZ, FCGR3A, FCER1A, CD3D, CD3E, CD4, CD8A, CD8B".split(", ")
-        word_ids = [self.data.gene2id[w] for w in genes if w in self.data.gene2id and np.random.rand() < self.discard_probability or w in markers]
+        word_ids = [self.data.gene2id[w] for w in genes if w in self.data.gene2id and np.random.rand() < self.discard_probability or w == "FCER1A"]
         idx_pairs = list(permutations(word_ids,2))
         return [(u, v, self.data.get_negative_targets(v, 5)) for u, v in idx_pairs if u != v]
 

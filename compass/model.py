@@ -67,7 +67,7 @@ class CompassTrainer(object):
             print("Epoch: {}".format(iteration+1))
             if not lr:
                 lr = self.initial_lr
-            optimizer = optim.SparseAdam(self.skip_gram_model.parameters(), lr=lr)
+            optimizer = optim.SparseAdam(list(self.skip_gram_model.parameters()), lr=lr)
             self.dataset.update_discard_probability(discard_probability)
             self.dataset.update_negative_targets(negative_targets)
             self.dataloader = self.create_dataloader(self.dataset)

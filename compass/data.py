@@ -126,12 +126,10 @@ class Context(object):
             row = normalized_matrix.getrow(cell)
             for index in row.nonzero()[1]:
                 symbol = index_gene[index]
-                # if not Context.filter_gene(symbol):
                 val = row[0,index]
-                if val > 0:
-                    self.expression[barcode][symbol] = val
-                    data[symbol].append(barcode)
-                    self.gene_frequency[symbol] += 1
+                self.expression[barcode][symbol] = val
+                data[symbol].append(barcode)
+                self.gene_frequency[symbol] += 1
         data = self.filter_on_frequency(data)
         return data, self.inverse_filter(data)
 

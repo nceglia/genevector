@@ -39,6 +39,11 @@ class CompassModel(nn.Module):
         self.bi.weight.data.zero_()
         self.bj.weight.data.zero_()
 
+        self.wi.to("cuda")
+        self.wj.to("cuda")
+        self.bi.to("cuda")
+        self.bk.to("cuda")
+
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)
         w_j = self.wj(j_indices)

@@ -58,7 +58,7 @@ class CompassModel(nn.Module):
         return x
 
     def save_embedding(self, id2word, file_name):
-        embedding = self.wi.weight.gpu().data.numpy()
+        embedding = self.wi.weight.cuda().data.numpy()
         with open(file_name, 'w') as f:
             f.write('%d %d\n' % (len(id2word), self.embedding_dim))
             for wid, w in id2word.items():

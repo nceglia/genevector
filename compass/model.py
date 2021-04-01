@@ -23,7 +23,6 @@ def weight_func(x, x_max, alpha):
 def wmse_loss(weights, inputs, targets):
     loss = F.mse_loss(inputs, targets, reduction='none')
     loss = loss.to("cuda")
-    print(loss.device)
     loss = weights * loss
     return torch.mean(loss).to("cuda")
 

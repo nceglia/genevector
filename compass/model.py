@@ -34,15 +34,17 @@ class CompassModel(nn.Module):
         self.bi = nn.Embedding(num_embeddings, 1)
         self.bj = nn.Embedding(num_embeddings, 1)
 
+        self.wi.to("cuda:0")
+        self.wj.to("cuda:0")
+        self.bi.to("cuda:0")
+        self.bj.to("cuda:0")
+
         self.wi.weight.data.uniform_(-1, 1)
         self.wj.weight.data.uniform_(-1, 1)
         self.bi.weight.data.zero_()
         self.bj.weight.data.zero_()
 
-        self.wi.to("cuda:0")
-        self.wj.to("cuda:0")
-        self.bi.to("cuda:0")
-        self.bj.to("cuda:0")
+
 
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)

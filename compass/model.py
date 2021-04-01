@@ -18,11 +18,11 @@ from torch.nn.init import xavier_normal
 def weight_func(x, x_max, alpha):
     wx = (x/x_max)**alpha
     wx = torch.min(wx, torch.ones_like(wx))
-    return wx.to("cuda")
+    return wx.to("cuda:0")
 
 def wmse_loss(weights, inputs, targets):
     loss = weights * F.mse_loss(inputs, targets, reduction='none')
-    return torch.mean(loss).to("cuda")
+    return torch.mean(loss).to("cuda:0")
 
 class CompassModel(nn.Module):
     def __init__(self, num_embeddings, embedding_dim):
@@ -39,10 +39,10 @@ class CompassModel(nn.Module):
         self.bi.weight.data.zero_()
         self.bj.weight.data.zero_()
 
-        self.wi.to("cuda")
-        self.wj.to("cuda")
-        self.bi.to("cuda")
-        self.bj.to("cuda")
+        self.wi.to("cuda:0")
+        self.wj.to("cuda:0")
+        self.bi.to("cuda:0")
+        self.bj.to("cuda:0")
 
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)
@@ -71,9 +71,9 @@ class CompassTrainer(object):
         self.model = CompassModel(self.emb_size, self.emb_dimension)
         self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
         self.use_cuda = torch.cuda.is_available()
-        self.device = torch.device("cuda")
+        self.device = torch.device("cuda:0")
         #if self.use_cuda:
-        #self.model.to("cuda")
+        #self.model.to("cuda:0")
         self.x_max = x_max
         self.alpha = alpha
 

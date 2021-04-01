@@ -68,7 +68,7 @@ class CompassTrainer(object):
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
         if self.use_cuda:
-            self.skip_gram_model.cuda()
+            self.model.cuda()
         self.x_max = x_max
         self.alpha = alpha
 

@@ -18,11 +18,11 @@ from torch.nn.init import xavier_normal
 def weight_func(x, x_max, alpha):
     wx = (x/x_max)**alpha
     wx = torch.min(wx, torch.ones_like(wx))
-    return wx.to("cpu")
+    return wx.to("cuda")
 
 def wmse_loss(weights, inputs, targets):
     loss = weights * F.mse_loss(inputs, targets, reduction='none')
-    return torch.mean(loss).to("cpu")
+    return torch.mean(loss).to("cuda")
 
 class CompassModel(nn.Module):
     def __init__(self, num_embeddings, embedding_dim):

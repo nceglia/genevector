@@ -21,8 +21,10 @@ def weight_func(x, x_max, alpha):
     return wx.to("cuda")
 
 def wmse_loss(weights, inputs, targets):
-    print(weights.device)
-    loss = weights * F.mse_loss(inputs, targets, reduction='none')
+    loss = F.mse_loss(inputs, targets, reduction='none')
+    print(loss.device)
+    loss = loss.to("cuda")
+    loss = weights * loss
     return torch.mean(loss).to("cuda")
 
 class CompassModel(nn.Module):

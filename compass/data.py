@@ -115,7 +115,7 @@ class Context(object):
     def expression(self, normalized_matrix, genes, cells):
         gene_index, index_gene = Context.index_geneset(genes)
         self.expression = collections.defaultdict(dict)
-        nonzero = (normalized_matrix > 0).nonzero()
+        nonzero = (normalized_matrix > 1).nonzero()
         print("Loading Expression.")
         nonzero_coords = list(zip(nonzero[0],nonzero[1]))
         self.gene_frequency = collections.defaultdict(int)

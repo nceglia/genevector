@@ -57,8 +57,11 @@ class CompassModel(nn.Module):
         x = torch.sum(w_i * w_j, dim=1) + b_i + b_j
         return x
 
-    def save_embedding(self, id2word, file_name):
-        embedding = self.wi.weight.cpu().data.numpy()
+    def save_embedding(self, id2word, file_name, layer):
+        if layer == 0:
+            embedding = self.wi.weight.cpu().data.numpy()
+        else:
+            embedding = self.wj.weight.cpu().data.numpy()
         with open(file_name, 'w') as f:
             f.write('%d %d\n' % (len(id2word), self.embedding_dim))
             for wid, w in id2word.items():
@@ -100,4 +103,5 @@ class CompassTrainer(object):
                 if batch_i % 100 == 0:
                     print("Epoch: {}/{} \t Batch: {}/{} \t Loss: {}".format(e, epochs, batch_i, n_batches, np.mean(loss_values[-20:])))  
         print("Saving model...")
-        self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name)
+        self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name, 0)
+        self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name.replace(".vec","2.vec"), 1)

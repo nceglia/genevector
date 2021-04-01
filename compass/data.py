@@ -20,7 +20,9 @@ from sklearn.neighbors import KernelDensity
 import matplotlib.pyplot as plt
 from collections import Counter
 from scipy import stats
+import itertools
 
+from sklearn.linear_model import LinearRegression
 
 class Context(object):
 
@@ -28,7 +30,7 @@ class Context(object):
         pass
 
     @classmethod
-    def build(context_class, adata, subsample=None):
+    def build(context_class, adata, subsample=None, frequency_lower_bound = 50):
         try:
             adata.var.index = [x.decode("utf-8") for x in adata.var.index]
         except Exception as e:
@@ -40,7 +42,7 @@ class Context(object):
         context.genes = [x.upper() for x in list(context.adata.var.index)]
         context.normalized_matrix = context.adata.X
         context.metadata = context.adata.obs
-        context.frequency_lower_bound = 1
+        context.frequency_lower_bound = frequency_lower_bound
         try:
             for column in context.metadata.columns:
                 if type(context.metadata[column][0]) == bytes:
@@ -54,17 +56,10 @@ class Context(object):
                             context.index_cell)
         context.expressed_genes = context.get_expressed_genes(context.data)
         context.gene_index, context.index_gene = Context.index_geneset(context.expressed_genes)
-        context.negatives = []
-        context.discards = []
-        context.negpos = 0
-        context.negative_table_size = 1e8
         context.gene2id = context.gene_index
         context.id2gene = context.index_gene
         context.gene_count = len(context.gene_frequency.keys())
         context.adata = adata
-        context.init_negative_table()
-        # context.idx_pairs = context.coexpression()
-        
         return context
 
     @classmethod
@@ -131,12 +126,15 @@ class Context(object):
             row = normalized_matrix.getrow(cell)
             for index in row.nonzero()[1]:
                 symbol = index_gene[index]
-                if not Context.filter_gene(symbol):
-                    self.expression[barcode][symbol] = row[0,index]
+                # if not Context.filter_gene(symbol):
+                val = row[0,index]
+                if val > 0:
+                    self.expression[barcode][symbol] = val
                     data[symbol].append(barcode)
                     self.gene_frequency[symbol] += 1
         data = self.filter_on_frequency(data)
         return data, self.inverse_filter(data)
+
 
     def filter_on_frequency(self, data):
         remove = []
@@ -172,60 +170,59 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
-    def init_negative_table(self):
-        pow_frequency = np.array(list(self.gene_frequency.values())) ** 0.75
-        words_pow = sum(pow_frequency)
-        ratio = pow_frequency / words_pow
-        count = np.round(ratio * self.negative_table_size)
-        for wid, c in enumerate(count):
-            self.negatives += [wid] * int(c)
-        self.negatives = np.array(self.negatives)
-        np.random.shuffle(self.negatives)
-
-    def get_negative_targets(self, target, size):
-        response = self.negatives[self.negpos:self.negpos + size]
-        self.negpos = (self.negpos + size) % len(self.negatives)
-        if len(response) != size:
-            return np.concatenate((response, self.negatives[0:self.negpos]))
-        return response
-
-    # def coexpression(self, min_pair_num=10, max_pair_num=1000):
-    #     idx_pairs = collections.defaultdict(int)
-    #     for cell, genes in tqdm.tqdm(self.cell_to_gene.items()):
-    #         pairs = list(permutations(genes,2))
-    #         pairs = [(self.gene_index[pair[0]],self.gene_index[pair[1]]) for pair in pairs if pair[0] != pair[1]]
-    #         for pair in pairs:
-    #             if idx_pairs[pair] < max_pair_num:
-    #                 idx_pairs[pair] += 1
-    #     return idx_pairs
-
 class CompassDataset(Dataset):
 
-    def __init__(self, data, discard_probability=0.1, negative_targets=5):
+    def __init__(self, data):
         self.data = data
-        self.negative_targets = negative_targets
-        self.discard_probability = discard_probability
+        self._word2id = self.data.gene2id
+        self._id2word = self.data.id2gene
+        self._vocab_len = len(self._word2id)
+        self.create_coocurrence_matrix()
+        print("Vocabulary length: {}".format(self._vocab_len))
 
-    def __len__(self):
-        return len(self.data.cells)
-    
-    def update_discard_probability(self, probability):
-        self.discard_probability = probability
-    
-    def update_negative_targets(self, negative_targets):
-        self.negative_targets = negative_targets
 
-    def __getitem__(self, idx):
-        cell_id = self.data.index_cell[idx]
-        genes = self.data.cell_to_gene[cell_id]
-        markers = "CD79A, MS4A1, GNLY, NKG7, CST3, LYZ, FCGR3A, FCER1A, CD3D, CD3E, CD4, CD8A, CD8B".split(", ")
-        word_ids = [self.data.gene2id[w] for w in genes if w in self.data.gene2id and np.random.rand() < self.discard_probability or w == "FCER1A"]
-        idx_pairs = list(permutations(word_ids,2))
-        return [(u, v, self.data.get_negative_targets(v, 5)) for u, v in idx_pairs if u != v]
+    def create_coocurrence_matrix(self): 
+        print("Generating Correlation matrix.")
+        self.coo = collections.defaultdict(lambda : collections.defaultdict(int))
+        import pandas
+        all_genes = self.data.expressed_genes
+        print("Generating Coeffs.")
+        corr_matrix = collections.defaultdict(list)
+        for cell, genes in self.data.expression.items():
+            for gene in all_genes:
+                if gene in genes:
+                    corr_matrix[gene].append(genes[gene])
+                else:
+                    corr_matrix[gene].append(0)
 
-    @staticmethod
-    def collate(batches):
-        all_u = [u for batch in batches for u, _, _ in batch if len(batch) > 0]
-        all_v = [v for batch in batches for _, v, _ in batch if len(batch) > 0]
-        all_neg_v = [neg_v for batch in batches for _, _, neg_v in batch if len(batch) > 0]
-        return torch.LongTensor(all_u), torch.LongTensor(all_v), torch.LongTensor(all_neg_v)
+        self._i_idx = list()
+        self._j_idx = list()
+        self._xij = list()
+
+        df = pandas.DataFrame(corr_matrix, columns=all_genes)
+        corr_matrix = numpy.transpose(df.to_numpy())
+
+        cov = numpy.corrcoef(corr_matrix,ddof=12)
+
+        for gene, row in zip(all_genes, cov):
+            for cgene, value in zip(all_genes, row):
+                wi = self.data.gene2id[gene]
+                ci = self.data.gene2id[cgene]
+                self._i_idx.append(wi)
+                self._j_idx.append(ci)
+                if value > 0.0:
+                    self._xij.append(float(value)+ 1.0)
+                else:
+                    self._xij.append(1.0)
+
+        self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
+        self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
+        self._xij = torch.FloatTensor(self._xij).to("cpu")
+
+
+    def get_batches(self, batch_size):
+        rand_ids = torch.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))
+
+        for p in range(0, len(rand_ids), batch_size):
+            batch_ids = rand_ids[p:p+batch_size]
+            yield self._xij[batch_ids], self._i_idx[batch_ids], self._j_idx[batch_ids]

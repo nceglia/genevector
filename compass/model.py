@@ -8,79 +8,85 @@ from tqdm import tqdm
 import scanpy as sc
 from torch.autograd import Variable
 
-class SkipGramModel(nn.Module):
+import torch as t
+import numpy as np
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.autograd import Variable
+from torch.nn.init import xavier_normal
 
-    def __init__(self, emb_size, emb_dimension):
-        super(SkipGramModel, self).__init__()
-        self.emb_size = emb_size
-        self.emb_dimension = emb_dimension
-        self.u_embeddings = nn.Embedding(emb_size, emb_dimension, sparse=True)
-        self.v_embeddings = nn.Embedding(emb_size, emb_dimension, sparse=True)
+def weight_func(x, x_max, alpha):
+    wx = (x/x_max)**alpha
+    wx = torch.min(wx, torch.ones_like(wx))
+    return wx.to("cpu")
 
-        initrange = 1.0 / self.emb_dimension
-        init.uniform_(self.u_embeddings.weight.data, -initrange, initrange)
-        init.constant_(self.v_embeddings.weight.data, 0)
+def wmse_loss(weights, inputs, targets):
+    loss = weights * F.mse_loss(inputs, targets, reduction='none')
+    return torch.mean(loss).to("cpu")
 
-    def forward(self, pos_u, pos_v, neg_v, clip=10):
-        emb_u = self.u_embeddings(pos_u)
-        emb_v = self.v_embeddings(pos_v)
-        emb_neg_v = self.v_embeddings(neg_v)
+class CompassModel(nn.Module):
+    def __init__(self, num_embeddings, embedding_dim):
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        super(CompassModel, self).__init__()
+        self.wi = nn.Embedding(num_embeddings, embedding_dim)
+        self.wj = nn.Embedding(num_embeddings, embedding_dim)
+        self.bi = nn.Embedding(num_embeddings, 1)
+        self.bj = nn.Embedding(num_embeddings, 1)
 
-        score = torch.sum(torch.mul(emb_u, emb_v), dim=1)
-        score = torch.clamp(score, max=clip, min=-clip)
-        score = -F.logsigmoid(score)
+        self.wi.weight.data.uniform_(-1, 1)
+        self.wj.weight.data.uniform_(-1, 1)
+        self.bi.weight.data.zero_()
+        self.bj.weight.data.zero_()
 
-        neg_score = torch.bmm(emb_neg_v, emb_u.unsqueeze(2)).squeeze()
-        neg_score = torch.clamp(neg_score, max=clip, min=-clip)
-        neg_score = -torch.sum(F.logsigmoid(-neg_score), dim=1)
-
-        return torch.mean(score + neg_score)
+    def forward(self, i_indices, j_indices):
+        w_i = self.wi(i_indices)
+        w_j = self.wj(j_indices)
+        b_i = self.bi(i_indices).squeeze()
+        b_j = self.bj(j_indices).squeeze()
+        x = torch.sum(w_i * w_j, dim=1) + b_i + b_j
+        return x
 
     def save_embedding(self, id2word, file_name):
-        embedding = self.u_embeddings.weight.cpu().data.numpy()
+        embedding = self.wi.weight.cpu().data.numpy()
         with open(file_name, 'w') as f:
-            f.write('%d %d\n' % (len(id2word), self.emb_dimension))
+            f.write('%d %d\n' % (len(id2word), self.embedding_dim))
             for wid, w in id2word.items():
                 e = ' '.join(map(lambda x: str(x), embedding[wid]))
                 f.write('%s %s\n' % (w, e))
 
 class CompassTrainer(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, x_max=100, alpha=0.75):
         self.dataset = dataset
-        self.dataloader = DataLoader(self.dataset, batch_size=batch_size, shuffle=True, num_workers=0, collate_fn=dataset.collate)
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension
         self.batch_size = batch_size
         self.initial_lr = initial_lr
-        self.skip_gram_model = SkipGramModel(self.emb_size, self.emb_dimension)
+        self.model = CompassModel(self.emb_size, self.emb_dimension)
+        self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
         if self.use_cuda:
             self.skip_gram_model.cuda()
-    
-    def create_dataloader(self, dataset):
-        return DataLoader(dataset, batch_size=self.batch_size, shuffle=True, num_workers=0, collate_fn=dataset.collate)
+        self.x_max = x_max
+        self.alpha = alpha
 
-    def train(self, iterations, lr=None, negative_targets=5, discard_probability=0.05):
-        for iteration in range(iterations):
-            print("Epoch: {}".format(iteration+1))
-            if not lr:
-                lr = self.initial_lr
-            optimizer = optim.SparseAdam(list(self.skip_gram_model.parameters()), lr=lr)
-            self.dataset.update_discard_probability(discard_probability)
-            self.dataset.update_negative_targets(negative_targets)
-            self.dataloader = self.create_dataloader(self.dataset)
-            running_loss = 0.0
-            for i, sample_batched in enumerate(tqdm(self.dataloader)):
-                if len(sample_batched[0]) > 1:
-                    pos_u = sample_batched[0].to(self.device)
-                    pos_v = sample_batched[1].to(self.device)
-                    neg_v = sample_batched[2].to(self.device)
-                    optimizer.zero_grad()
-                    loss = self.skip_gram_model.forward(pos_u, pos_v, neg_v)
-                    loss.backward()
-                    optimizer.step()
-                    running_loss =+ loss.item()
-            print("Loss:", running_loss)
-            self.skip_gram_model.save_embedding(self.dataset.data.id2gene, self.output_file_name)
+    def train(self, epochs):
+        n_batches = int(len(self.dataset._xij) / self.batch_size)
+        loss_values = list()
+        for e in range(1, epochs+1):
+            batch_i = 0
+            for x_ij, i_idx, j_idx in self.dataset.get_batches(self.batch_size):
+                batch_i += 1
+                self.optimizer.zero_grad()
+                outputs = self.model(i_idx, j_idx)
+                weights_x = weight_func(x_ij, self.x_max, self.alpha)
+                loss = wmse_loss(weights_x, outputs, torch.log(x_ij))
+                loss.backward()
+                self.optimizer.step()
+                loss_values.append(loss.item())
+                if batch_i % 100 == 0:
+                    print("Epoch: {}/{} \t Batch: {}/{} \t Loss: {}".format(e, epochs, batch_i, n_batches, np.mean(loss_values[-20:])))  
+        print("Saving model...")
+        self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name)

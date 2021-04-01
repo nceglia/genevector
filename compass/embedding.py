@@ -45,7 +45,6 @@ class GeneEmbedding(object):
         return embedding
 
     def compute_similarities(self, gene, subset=None):
-        print("hit")
         if gene not in self.embeddings:
             return None
         embedding = self.embeddings[gene]
@@ -202,7 +201,7 @@ class GeneEmbedding(object):
             ctypes = list(set(ctypes))
             for key, value in marker_labels.items():
                 marker_colors[key] = cmap(ctypes.index(value))
-        colors = pandas.DataFrame(markers)[0].map(marker_colors)
+            colors = pandas.DataFrame(markers)[0].map(marker_colors)
         similarity_matrix = []
         print("Running")
         markers = set(list(self.embeddings.keys())).intersection(set(markers))
@@ -273,8 +272,15 @@ class GeneEmbedding(object):
         ax = plt.subplot(1,1,1)
         #pos = nx.nx_agraph.graphviz_layout(G, prog="neato",args="-Goverlap=scale")
         pos = nx.nx_agraph.graphviz_layout(G, prog="neato",args="-Goverlap=scale -Elen=5 -Eweight=0.2")
-        #pos = nx.spring_layout(G)
-        nx.draw(G,pos,ax=ax, cmap=cmap,nodelist=node_order, node_size=node_size,edgelist=edge_order, node_color=node_color, edge_color=edge_color, edge_vmin=0, edge_vmax=1.0, edge_cmap=plt.cm.Greys, with_labels=True, width=1,font_size=7)
+        nx.draw(G,pos,ax=ax, cmap=cmap,nodelist=node_order, 
+                             node_size=node_size,
+                             edgelist=edge_order, 
+                             node_color=node_color, 
+                             edge_color=edge_color, 
+                             edge_vmin=0, 
+                             edge_vmax=1.0, 
+                             edge_cmap=plt.cm.Greys, 
+                             with_labels=True, width=1,font_size=7)
         nx.draw_networkx_edge_labels(G,pos,edge_labels=edge_labels, font_size=6)
         plt.axis('off')
         plt.tight_layout()

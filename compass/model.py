@@ -34,10 +34,10 @@ class CompassModel(nn.Module):
         self.bi = nn.Embedding(num_embeddings, 1)
         self.bj = nn.Embedding(num_embeddings, 1)
 
-        self.wi.to("cuda")
-        self.wj.to("cuda")
-        self.bi.to("cuda")
-        self.bj.to("cuda")
+        # self.wi.to("cuda")
+        # self.wj.to("cuda")
+        # self.bi.to("cuda")
+        # self.bj.to("cuda")
 
         self.wi.weight.data.uniform_(-1, 1)
         self.wj.weight.data.uniform_(-1, 1)

@@ -48,7 +48,7 @@ class CompassModel(nn.Module):
         return x
 
     def save_embedding(self, id2word, file_name):
-        embedding = self.wi.weight.cpu().data.numpy()
+        embedding = self.wi.weight.gpu().data.numpy()
         with open(file_name, 'w') as f:
             f.write('%d %d\n' % (len(id2word), self.embedding_dim))
             for wid, w in id2word.items():
@@ -66,9 +66,9 @@ class CompassTrainer(object):
         self.model = CompassModel(self.emb_size, self.emb_dimension)
         self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
         self.use_cuda = torch.cuda.is_available()
-        self.device = torch.device("cuda" if self.use_cuda else "cpu")
-        if self.use_cuda:
-            self.model.to(self.device)
+        self.device = torch.device("cuda")
+        #if self.use_cuda:
+        #self.model.to("cuda")
         self.x_max = x_max
         self.alpha = alpha
 

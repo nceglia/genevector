@@ -22,8 +22,8 @@ def weight_func(x, x_max, alpha):
 
 def wmse_loss(weights, inputs, targets):
     loss = F.mse_loss(inputs, targets, reduction='none')
-    print(loss.device)
     loss = loss.to("cuda")
+    print(loss.device)
     loss = weights * loss
     return torch.mean(loss).to("cuda")
 
@@ -58,7 +58,7 @@ class CompassModel(nn.Module):
         return x
 
     def save_embedding(self, id2word, file_name):
-        embedding = self.wi.weight.cuda().data.numpy()
+        embedding = self.wi.weight.cpu().data.numpy()
         with open(file_name, 'w') as f:
             f.write('%d %d\n' % (len(id2word), self.embedding_dim))
             for wid, w in id2word.items():

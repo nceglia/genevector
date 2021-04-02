@@ -15,16 +15,17 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.init import xavier_normal
 
-def weight_func(x, x_max, alpha):
+def weight_func(x, x_max, alpha, device):
     wx = (x/x_max)**alpha
     wx = torch.min(wx, torch.ones_like(wx))
-    return wx.to("cuda")
+    return wx.to(device)
 
-def wmse_loss(weights, inputs, targets):
+def wmse_loss(weights, inputs, targets, device):
     loss = F.mse_loss(inputs, targets, reduction='none')
-    loss = loss.to("cuda")
+    if device == "cuda":
+        loss = loss.to(device)
     loss = weights * loss
-    return torch.mean(loss).to("cuda")
+    return torch.mean(loss).to(device)
 
 class CompassModel(nn.Module):
     def __init__(self, num_embeddings, embedding_dim):
@@ -35,18 +36,10 @@ class CompassModel(nn.Module):
         self.wj = nn.Embedding(num_embeddings, embedding_dim)
         self.bi = nn.Embedding(num_embeddings, 1)
         self.bj = nn.Embedding(num_embeddings, 1)
-
-        # self.wi.to("cuda")
-        # self.wj.to("cuda")
-        # self.bi.to("cuda")
-        # self.bj.to("cuda")
-
         self.wi.weight.data.uniform_(-1, 1)
         self.wj.weight.data.uniform_(-1, 1)
         self.bi.weight.data.zero_()
         self.bj.weight.data.zero_()
-
-
 
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)
@@ -68,7 +61,7 @@ class CompassModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class CompassTrainer(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, x_max=100, alpha=0.75):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, x_max=100, alpha=0.75, device="cpu"):
         self.dataset = dataset
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
@@ -78,12 +71,11 @@ class CompassTrainer(object):
         self.model = CompassModel(self.emb_size, self.emb_dimension)
         self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
         self.use_cuda = torch.cuda.is_available()
-        # self.device = torch.device("cuda")
-        #if self.use_cuda:
-        # self.model = self.model.cuda()
-        # print("\n\n\n\n{}\n\n\n\n".format(self.model.device))
         self.x_max = x_max
         self.alpha = alpha
+        self.device = device
+        if self.device == "cuda" and not self.use_cuda:
+            raise ValueError("CUDA requested but no GPU available.")
 
     def train(self, epochs):
         n_batches = int(len(self.dataset._xij) / self.batch_size)
@@ -94,8 +86,8 @@ class CompassTrainer(object):
                 batch_i += 1
                 self.optimizer.zero_grad()
                 outputs = self.model(i_idx, j_idx)
-                weights_x = weight_func(x_ij, self.x_max, self.alpha)
-                loss = wmse_loss(weights_x, outputs, torch.log(x_ij))
+                weights_x = weight_func(x_ij, self.x_max, self.alpha, self.device)
+                loss = wmse_loss(weights_x, outputs, torch.log(x_ij), self.device)
                 loss.backward()
                 self.optimizer.step()
                 loss_values.append(loss.item())

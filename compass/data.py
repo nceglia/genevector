@@ -181,26 +181,32 @@ class CompassDataset(Dataset):
 
     def create_coocurrence_matrix(self): 
         print("Generating Correlation matrix.")
-        self.coo = collections.defaultdict(lambda : collections.defaultdict(int))
         import pandas
         all_genes = self.data.expressed_genes
-        print("Generating Coeffs.")
+        
         corr_matrix = collections.defaultdict(list)
+
+
+        print("Generating Coeffs.")
         for cell, genes in self.data.expression.items():
             for gene in all_genes:
                 if gene in genes:
-                    corr_matrix[gene].append(genes[gene])
+                    corr_matrix[gene].append(1) #genes[gene])
                 else:
                     corr_matrix[gene].append(0)
+        corr_df = pandas.DataFrame.from_dict(corr_matrix)
+
+        print("Decomposing")
+        coocc = numpy.array(corr_df.T.dot(corr_df))
+        print(coocc)
+        df = pandas.DataFrame(corr_matrix, columns=all_genes)
+        corr_matrix = numpy.transpose(df.to_numpy())
+        cov = numpy.corrcoef(corr_matrix)
 
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
 
-        df = pandas.DataFrame(corr_matrix, columns=all_genes)
-        corr_matrix = numpy.transpose(df.to_numpy())
-
-        cov = numpy.corrcoef(corr_matrix,ddof=12)
 
         for gene, row in zip(all_genes, cov):
             for cgene, value in zip(all_genes, row):
@@ -209,7 +215,7 @@ class CompassDataset(Dataset):
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
                 if value > 0.0:
-                    self._xij.append(float(value)+ 1.0)
+                    self._xij.append(float(value) * coocc[wi,ci] + 1.0)
                 else:
                     self._xij.append(1.0)
 

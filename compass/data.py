@@ -30,7 +30,7 @@ class Context(object):
         pass
 
     @classmethod
-    def build(context_class, adata, subsample=None, frequency_lower_bound = 50):
+    def build(context_class, adata, subsample=None, frequency_lower_bound = 10):
         try:
             adata.var.index = [x.decode("utf-8") for x in adata.var.index]
         except Exception as e:
@@ -170,14 +170,15 @@ class Context(object):
 
 class CompassDataset(Dataset):
 
-    def __init__(self, data):
-        self.data = data
+    def __init__(self, adata, features=[]):
+        self.data = Context.build(adata)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene
         self._vocab_len = len(self._word2id)
+        self.features = features
         self.create_coocurrence_matrix()
         print("Vocabulary length: {}".format(self._vocab_len))
-
+        
 
     def create_coocurrence_matrix(self): 
         print("Generating Correlation matrix.")
@@ -186,20 +187,47 @@ class CompassDataset(Dataset):
         
         corr_matrix = collections.defaultdict(list)
 
+        feature_map = dict()
+        for feature in self.features:
+            if feature in self.data.metadata:
+                feature_series = self.data.metadata[feature]
+                feature_map[feature] = dict(zip(feature_series.index.tolist(), feature_series.tolist()))
+
+        all_features = set()
+        self.feature_types = dict()
 
         print("Generating Coeffs.")
         for cell, genes in self.data.expression.items():
             for gene in all_genes:
+                self.feature_types[gene] = "Gene"
                 if gene in genes:
-                    corr_matrix[gene].append(1) #genes[gene])
+                    corr_matrix[gene].append(1)#genes[gene])
                 else:
                     corr_matrix[gene].append(0)
+            for feature in self.features:
+                for feature_label in set(list(feature_map[feature].values())):
+                    all_features.add(feature_label)
+                    self.feature_types[feature_label] = feature
+                    if feature_map[feature][cell] == feature_label:
+                        corr_matrix[feature_label].append(1)
+                    else:
+                        corr_matrix[feature_label].append(0)
+
+        all_features = list(all_features)
+
+        gene_index = {w: idx for (idx, w) in enumerate(all_genes+all_features)}
+        index_gene = {idx: w for (idx, w) in enumerate(all_genes+all_features)}
+        self.data.gene2id = gene_index
+        self.data.id2gene = index_gene
+        self.data.expressed_genes = all_genes+all_features
+        self.data.feature_types = self.feature_types
+
         corr_df = pandas.DataFrame.from_dict(corr_matrix)
 
         print("Decomposing")
         coocc = numpy.array(corr_df.T.dot(corr_df))
         print(coocc)
-        df = pandas.DataFrame(corr_matrix, columns=all_genes)
+        df = pandas.DataFrame(corr_matrix, columns=all_genes+all_features)
         corr_matrix = numpy.transpose(df.to_numpy())
         cov = numpy.corrcoef(corr_matrix)
 
@@ -207,9 +235,8 @@ class CompassDataset(Dataset):
         self._j_idx = list()
         self._xij = list()
 
-
-        for gene, row in zip(all_genes, cov):
-            for cgene, value in zip(all_genes, row):
+        for gene, row in zip(all_genes+all_features, cov):
+            for cgene, value in zip(all_genes+all_features, row):
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)

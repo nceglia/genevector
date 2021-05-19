@@ -383,15 +383,11 @@ class CellEmbedding(object):
                 for gene in set(genes).intersection(set(embed.embeddings.keys())):
                     if gene in cell_weights:
                         weight = self.expression[cell][gene]
-                        if weight > 0:
-                            self.data[cell].append(embed.embeddings[gene])
-                            self.weights[cell].append(weight)
-                    elif self.context.feature_types[gene] != "Gene" and include_features:
                         self.data[cell].append(embed.embeddings[gene])
-                        self.weights[cell].append(feature_weight)
+                        self.weights[cell].append(weight)
         self.matrix = []
         dataset_vector = []
-        for cell, vectors in self.data.items():
+        for cell, vectors in tqdm.tqdm(list(self.data.items())):
             weights = self.weights[cell]
             xvec = list(numpy.average(vectors, axis=0, weights=weights))
             self.matrix.append(xvec)

@@ -249,9 +249,9 @@ class CompassDataset(Dataset):
                 else:
                     self._xij.append(1.0)
 
-        self._i_idx = torch.LongTensor(self._i_idx).to("cuda:0")
-        self._j_idx = torch.LongTensor(self._j_idx).to("cuda:0")
-        self._xij = torch.FloatTensor(self._xij).to("cuda:0")
+        self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
+        self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
+        self._xij = torch.FloatTensor(self._xij).to("cpu")
 
         self.coocc = coocc
 

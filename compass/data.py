@@ -253,7 +253,7 @@ class CompassDataset(Dataset):
         self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
         self._xij = torch.FloatTensor(self._xij).to("cpu")
 
-        self.corr_matrix = corr_matrx
+        self.corr_matrix = corr_matrix
         self.cov = cov
         self.coocc = coocc
 

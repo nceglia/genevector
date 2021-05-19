@@ -69,9 +69,10 @@ class CompassTrainer(object):
         self.batch_size = batch_size
         self.initial_lr = initial_lr
         self.model = CompassModel(self.emb_size, self.emb_dimension) 
+        self.model.cuda()
         self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
         self.use_cuda = torch.cuda.is_available()
-        self.model.cuda()
+        self.optimizer.cuda()
         self.x_max = x_max
         self.alpha = alpha
         self.device = device

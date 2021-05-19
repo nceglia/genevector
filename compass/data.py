@@ -1,10 +1,10 @@
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-
+from multiprocessing import Pool
 import scanpy as sc
 import numpy
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, find
 import operator
 import itertools
 from itertools import permutations
@@ -24,13 +24,33 @@ import itertools
 
 from sklearn.linear_model import LinearRegression
 
+def load_barcode_chunk(row):
+    print("thread")
+    expression_subset = dict()
+    # barcode = cells[cell]
+    # expression_subset[barcode] = dict()
+    # row = normalized_matrix.getrow(cell)
+    for index in row.nonzero()[1]:
+        # symbol = index_gene[index]
+        val = row[0,index]
+        expression_subset[index] = val
+        # data[symbol].append(barcode)
+        # self.gene_frequency[symbol] += 1 
+    return expression_subset
+
+def multithread_load(chunks, threads):
+    print("Running load")
+    with Pool(threads) as p:
+        results = p.map(load_barcode_chunk, chunks)
+        exit(0)
+
 class Context(object):
 
     def __init__(self):
         pass
 
     @classmethod
-    def build(context_class, adata, subsample=None, frequency_lower_bound = 10):
+    def build(context_class, adata, subsample=None, frequency_lower_bound = 10, threads=2):
         try:
             adata.var.index = [x.decode("utf-8") for x in adata.var.index]
         except Exception as e:
@@ -39,6 +59,7 @@ class Context(object):
         if subsample:
             sc.pp.subsample(adata,fraction=subsample)
         context.adata = adata
+        context.threads = threads
         context.genes = [x.upper() for x in list(context.adata.var.index)]
         context.normalized_matrix = context.adata.X
         context.metadata = context.adata.obs
@@ -115,21 +136,26 @@ class Context(object):
     def expression(self, normalized_matrix, genes, cells):
         gene_index, index_gene = Context.index_geneset(genes)
         self.expression = collections.defaultdict(dict)
-        nonzero = (normalized_matrix > 1).nonzero()
+        nonzero = find(normalized_matrix)
         print("Loading Expression.")
-        nonzero_coords = list(zip(nonzero[0],nonzero[1]))
+
         self.gene_frequency = collections.defaultdict(int)
         data = collections.defaultdict(list)
-        nonzero_cells = list(set(nonzero[0]))
-        for cell in tqdm.tqdm(nonzero_cells):
+        
+        nonindexed_expression = collections.defaultdict(dict)
+        for cell, gene_i, val in tqdm.tqdm(list(zip(*nonzero))):
+            symbol = index_gene[gene_i]
+            nonindexed_expression[cell][symbol] = val
+
+        self.cooc = set()
+        print("Reindexing Cooc")
+        for cell, genes in tqdm.tqdm(list(nonindexed_expression.items())):
             barcode = cells[cell]
-            row = normalized_matrix.getrow(cell)
-            for index in row.nonzero()[1]:
-                symbol = index_gene[index]
-                val = row[0,index]
-                self.expression[barcode][symbol] = val
-                data[symbol].append(barcode)
-                self.gene_frequency[symbol] += 1
+            for index, val in genes.items():
+                self.expression[barcode][index] = val
+                data[index].append(barcode)
+                self.gene_frequency[index] += 1
+
         data = self.filter_on_frequency(data)
         return data, self.inverse_filter(data)
 
@@ -187,46 +213,24 @@ class CompassDataset(Dataset):
         
         corr_matrix = collections.defaultdict(list)
 
-        feature_map = dict()
-        for feature in self.features:
-            if feature in self.data.metadata:
-                feature_series = self.data.metadata[feature]
-                feature_map[feature] = dict(zip(feature_series.index.tolist(), feature_series.tolist()))
-
-        all_features = set()
-        self.feature_types = dict()
+        expression_set = list(self.data.expression.items())
 
         print("Generating Coeffs.")
-        expression = list(self.data.expression.items())
-        for cell, genes in tqdm.tqdm(expression):
-            corr_matrix[gene] = [0 for _ in all_genes]
-            for gene in genes:
-                self.feature_types[gene] = "Gene"
-                corr_matrix[gene][all_genes.index(gene)] = 1 #genes[gene])
-            for feature in self.features:
-                for feature_label in set(list(feature_map[feature].values())):
-                    all_features.add(feature_label)
-                    self.feature_types[feature_label] = feature
-                    if feature_map[feature][cell] == feature_label:
-                        corr_matrix[feature_label].append(1)
-                    else:
-                        corr_matrix[feature_label].append(0)
+        for cell, genes in tqdm.tqdm(expression_set):
+            for gene in all_genes:
+                if genes in genes:
+                    corr_matrix[gene].append(1)#genes[gene])
+                else:
+                    corr_matrix[gene].append(0)
 
-        all_features = list(all_features)
-
-        gene_index = {w: idx for (idx, w) in enumerate(all_genes+all_features)}
-        index_gene = {idx: w for (idx, w) in enumerate(all_genes+all_features)}
-        self.data.gene2id = gene_index
-        self.data.id2gene = index_gene
-        self.data.expressed_genes = all_genes+all_features
-        self.data.feature_types = self.feature_types
+        self.data.expressed_genes = all_genes
 
         corr_df = pandas.DataFrame.from_dict(corr_matrix)
 
         print("Decomposing")
         coocc = numpy.array(corr_df.T.dot(corr_df))
         print(coocc)
-        df = pandas.DataFrame(corr_matrix, columns=all_genes+all_features)
+        df = pandas.DataFrame(corr_matrix, columns=all_genes)
         corr_matrix = numpy.transpose(df.to_numpy())
         cov = numpy.corrcoef(corr_matrix)
 
@@ -234,8 +238,8 @@ class CompassDataset(Dataset):
         self._j_idx = list()
         self._xij = list()
 
-        for gene, row in zip(all_genes+all_features, cov):
-            for cgene, value in zip(all_genes+all_features, row):
+        for gene, row in zip(all_genes, cov):
+            for cgene, value in zip(all_genes, row):
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
@@ -252,7 +256,6 @@ class CompassDataset(Dataset):
 
     def get_batches(self, batch_size):
         rand_ids = torch.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))
-
         for p in range(0, len(rand_ids), batch_size):
             batch_ids = rand_ids[p:p+batch_size]
             yield self._xij[batch_ids], self._i_idx[batch_ids], self._j_idx[batch_ids]

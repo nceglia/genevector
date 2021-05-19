@@ -50,7 +50,7 @@ class Context(object):
         pass
 
     @classmethod
-    def build(context_class, adata, subsample=None, frequency_lower_bound = 10, threads=2):
+    def build(context_class, adata, subsample=None, expression=None, frequency_lower_bound = 10, threads=2):
         try:
             adata.var.index = [x.decode("utf-8") for x in adata.var.index]
         except Exception as e:
@@ -74,7 +74,8 @@ class Context(object):
         context.cell_index, context.index_cell = Context.index_cells(context.cells)
         context.data, context.cell_to_gene = context.expression(context.normalized_matrix, \
                             context.genes, \
-                            context.index_cell)
+                            context.index_cell,
+                            expression=expression)
         context.expressed_genes = context.get_expressed_genes(context.data)
         context.gene_index, context.index_gene = Context.index_geneset(context.expressed_genes)
         context.gene2id = context.gene_index
@@ -133,28 +134,35 @@ class Context(object):
             return True
         return False
 
-    def expression(self, normalized_matrix, genes, cells):
+    def expression(self, normalized_matrix, genes, cells, expression=None):
         gene_index, index_gene = Context.index_geneset(genes)
-        self.expression = collections.defaultdict(dict)
-        nonzero = find(normalized_matrix)
-        print("Loading Expression.")
+        if expression == None:
+            self.expression = collections.defaultdict(dict)
+            nonzero = find(normalized_matrix)
+            print("Loading Expression.")
 
-        self.gene_frequency = collections.defaultdict(int)
-        data = collections.defaultdict(list)
-        
-        nonindexed_expression = collections.defaultdict(dict)
-        for cell, gene_i, val in tqdm.tqdm(list(zip(*nonzero))):
-            symbol = index_gene[gene_i]
-            nonindexed_expression[cell][symbol] = val
+            self.gene_frequency = collections.defaultdict(int)
+            data = collections.defaultdict(list)
+            
+            nonindexed_expression = collections.defaultdict(dict)
+            for cell, gene_i, val in tqdm.tqdm(list(zip(*nonzero))):
+                symbol = index_gene[gene_i]
+                nonindexed_expression[cell][symbol] = val
 
-        self.cooc = set()
-        print("Reindexing Cooc")
-        for cell, genes in tqdm.tqdm(list(nonindexed_expression.items())):
-            barcode = cells[cell]
-            for index, val in genes.items():
-                self.expression[barcode][index] = val
-                data[index].append(barcode)
-                self.gene_frequency[index] += 1
+            self.cooc = set()
+            print("Reindexing Cooc")
+            for cell, genes in tqdm.tqdm(list(nonindexed_expression.items())):
+                barcode = cells[cell]
+                for index, val in genes.items():
+                    self.expression[barcode][index] = val
+                    data[index].append(barcode)
+                    self.gene_frequency[index] += 1
+        else:
+            self.expression = pickle.load(open(expression,"rb"))
+            for cell, genes in tqdm.tqdm(list(self.expression.items())):
+                for gene, val in genes.items():
+                    data[gene] = barcode
+                    self.gene_frequency[gene] += 1
 
         data = self.filter_on_frequency(data)
         return data, self.inverse_filter(data)
@@ -196,43 +204,43 @@ class Context(object):
 
 class CompassDataset(Dataset):
 
-    def __init__(self, adata, features=[]):
-        self.data = Context.build(adata)
+    def __init__(self, adata, features=[], expression=None, coocc=None):
+        self.data = Context.build(adata,expression=expression)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene
         self._vocab_len = len(self._word2id)
         self.features = features
-        self.create_coocurrence_matrix()
+        self.create_coocurrence_matrix(coocc=coocc)
         print("Vocabulary length: {}".format(self._vocab_len))
         
 
-    def create_coocurrence_matrix(self): 
+    def create_coocurrence_matrix(self, coocc=None): 
         print("Generating Correlation matrix.")
         import pandas
         all_genes = self.data.expressed_genes
-        
-        corr_matrix = collections.defaultdict(list)
+        if coocc == None:
+            corr_matrix = collections.defaultdict(list)
 
-        expression_set = list(self.data.expression.items())
+            expression_set = list(self.data.expression.items())
 
-        print("Generating Coeffs.")
-        for cell, genes in tqdm.tqdm(expression_set):
-            for gene in all_genes:
-                if gene in genes:
-                    corr_matrix[gene].append(genes[gene])
-                else:
-                    corr_matrix[gene].append(0)
+            print("Generating Coeffs.")
+            for cell, genes in tqdm.tqdm(expression_set):
+                for gene in all_genes:
+                    if gene in genes:
+                        corr_matrix[gene].append(genes[gene])
+                    else:
+                        corr_matrix[gene].append(0)
 
-        self.data.expressed_genes = all_genes
+            corr_df = pandas.DataFrame.from_dict(corr_matrix)
 
-        corr_df = pandas.DataFrame.from_dict(corr_matrix)
-
-        print("Decomposing")
-        coocc = numpy.array(corr_df.T.dot(corr_df))
-        print(coocc)
-        # df = pandas.DataFrame(corr_matrix, columns=all_genes)
-        # corr_matrix = numpy.transpose(df.to_numpy())
-        # cov = numpy.corrcoef(corr_matrix)
+            print("Decomposing")
+            coocc = numpy.array(corr_df.T.dot(corr_df))
+            print(coocc)
+            # df = pandas.DataFrame(corr_matrix, columns=all_genes)
+            # corr_matrix = numpy.transpose(df.to_numpy())
+            # cov = numpy.corrcoef(corr_matrix)
+        else:
+            coocc = pickle.load(open(coocc,"rb"))
 
         self._i_idx = list()
         self._j_idx = list()

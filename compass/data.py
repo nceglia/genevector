@@ -245,7 +245,7 @@ class CompassDataset(Dataset):
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
                 if value > 0.0:
-                    self._xij.append(float(value) * coocc[wi,ci] + 1.0)
+                    self._xij.append(float(value) * cov[wi,ci] + 1.0)
                 else:
                     self._xij.append(1.0)
 
@@ -253,6 +253,9 @@ class CompassDataset(Dataset):
         self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
         self._xij = torch.FloatTensor(self._xij).to("cpu")
 
+        self.corr_matrix = corr_matrx
+        self.cov = cov
+        self.coocc = coocc
 
     def get_batches(self, batch_size):
         rand_ids = torch.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))

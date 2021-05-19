@@ -18,12 +18,12 @@ from torch.nn.init import xavier_normal
 def weight_func(x, x_max, alpha, device):
     wx = (x/x_max)**alpha
     wx = torch.min(wx, torch.ones_like(wx))
-    return wx.to(device)
+    return wx.cuda()
 
 def wmse_loss(weights, inputs, targets, device):
     loss = F.mse_loss(inputs, targets, reduction='none')
     if device == "cuda":
-        loss = loss.to(device)
+        loss = loss.cuda()
     loss = weights * loss
     return torch.mean(loss).to(device)
 

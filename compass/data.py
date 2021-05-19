@@ -136,20 +136,18 @@ class Context(object):
 
     def expression(self, normalized_matrix, genes, cells, expression=None):
         gene_index, index_gene = Context.index_geneset(genes)
+        self.gene_frequency = collections.defaultdict(int)
+        data = collections.defaultdict(list)
         if expression == None:
             self.expression = collections.defaultdict(dict)
             nonzero = find(normalized_matrix)
             print("Loading Expression.")
-
-            self.gene_frequency = collections.defaultdict(int)
-            data = collections.defaultdict(list)
             
             nonindexed_expression = collections.defaultdict(dict)
             for cell, gene_i, val in tqdm.tqdm(list(zip(*nonzero))):
                 symbol = index_gene[gene_i]
                 nonindexed_expression[cell][symbol] = val
-
-            self.cooc = set()
+            
             print("Reindexing Cooc")
             for cell, genes in tqdm.tqdm(list(nonindexed_expression.items())):
                 barcode = cells[cell]
@@ -161,7 +159,7 @@ class Context(object):
             self.expression = pickle.load(open(expression,"rb"))
             for cell, genes in tqdm.tqdm(list(self.expression.items())):
                 for gene, val in genes.items():
-                    data[gene] = barcode
+                    data[gene].append(cell)
                     self.gene_frequency[gene] += 1
 
         data = self.filter_on_frequency(data)

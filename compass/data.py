@@ -197,13 +197,12 @@ class CompassDataset(Dataset):
         self.feature_types = dict()
 
         print("Generating Coeffs.")
-        for cell, genes in self.data.expression.items():
-            for gene in all_genes:
+        expression = list(self.data.expression.items())
+        for cell, genes in tqdm.tqdm(expression):
+            corr_matrix[gene] = [0 for _ in all_genes]
+            for gene in genes:
                 self.feature_types[gene] = "Gene"
-                if gene in genes:
-                    corr_matrix[gene].append(1)#genes[gene])
-                else:
-                    corr_matrix[gene].append(0)
+                corr_matrix[gene][all_genes.index(gene)] = 1 #genes[gene])
             for feature in self.features:
                 for feature_label in set(list(feature_map[feature].values())):
                     all_features.add(feature_label)

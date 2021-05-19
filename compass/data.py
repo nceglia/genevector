@@ -253,9 +253,8 @@ class CompassDataset(Dataset):
         self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
         self._xij = torch.FloatTensor(self._xij).to("cpu")
 
-        # self.corr_matrix = corr_matrix
-        # self.cov = cov
         self.coocc = coocc
+
 
     def get_batches(self, batch_size):
         rand_ids = torch.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))

@@ -219,7 +219,7 @@ class CompassDataset(Dataset):
         for cell, genes in tqdm.tqdm(expression_set):
             for gene in all_genes:
                 if gene in genes:
-                    corr_matrix[gene].append(1)#genes[gene])
+                    corr_matrix[gene].append(genes[gene])
                 else:
                     corr_matrix[gene].append(0)
 

@@ -72,7 +72,7 @@ class CompassTrainer(object):
         self.model.cuda()
         self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
         self.use_cuda = torch.cuda.is_available()
-        self.optimizer.cuda()
+        # self.optimizer.cuda()
         self.x_max = x_max
         self.alpha = alpha
         self.device = device

@@ -218,7 +218,7 @@ class CompassDataset(Dataset):
         print("Generating Coeffs.")
         for cell, genes in tqdm.tqdm(expression_set):
             for gene in all_genes:
-                if genes in genes:
+                if gene in genes:
                     corr_matrix[gene].append(1)#genes[gene])
                 else:
                     corr_matrix[gene].append(0)

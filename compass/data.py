@@ -249,15 +249,15 @@ class CompassDataset(Dataset):
                 else:
                     self._xij.append(1.0)
 
-        self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
-        self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
-        self._xij = torch.FloatTensor(self._xij).to("cpu")
+        self._i_idx = torch.cuda.LongTensor(self._i_idx).to("cuda:0")
+        self._j_idx = torch.cuda.LongTensor(self._j_idx).to("cuda:0")
+        self._xij = torch.cuda.FloatTensor(self._xij).to("cuda:0")
 
         self.coocc = coocc
 
 
     def get_batches(self, batch_size):
-        rand_ids = torch.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))
+        rand_ids = torch.cuda.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))
         for p in range(0, len(rand_ids), batch_size):
             batch_ids = rand_ids[p:p+batch_size]
             yield self._xij[batch_ids], self._i_idx[batch_ids], self._j_idx[batch_ids]

@@ -230,22 +230,22 @@ class CompassDataset(Dataset):
         print("Decomposing")
         coocc = numpy.array(corr_df.T.dot(corr_df))
         print(coocc)
-        df = pandas.DataFrame(corr_matrix, columns=all_genes)
-        corr_matrix = numpy.transpose(df.to_numpy())
-        cov = numpy.corrcoef(corr_matrix)
+        # df = pandas.DataFrame(corr_matrix, columns=all_genes)
+        # corr_matrix = numpy.transpose(df.to_numpy())
+        # cov = numpy.corrcoef(corr_matrix)
 
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
 
-        for gene, row in zip(all_genes, cov):
+        for gene, row in zip(all_genes, coocc):
             for cgene, value in zip(all_genes, row):
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
                 if value > 0.0:
-                    self._xij.append(float(value) * cov[wi,ci] + 1.0)
+                    self._xij.append(float(value) * coocc[wi,ci] + 1.0)
                 else:
                     self._xij.append(1.0)
 
@@ -253,8 +253,8 @@ class CompassDataset(Dataset):
         self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
         self._xij = torch.FloatTensor(self._xij).to("cpu")
 
-        self.corr_matrix = corr_matrix
-        self.cov = cov
+        # self.corr_matrix = corr_matrix
+        # self.cov = cov
         self.coocc = coocc
 
     def get_batches(self, batch_size):

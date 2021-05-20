@@ -182,11 +182,16 @@ class CompassDataset(Dataset):
         all_genes = self.data.expressed_genes
         if coocc == None:
             corr_df = pandas.DataFrame.from_dict(self.data.expression)
+            print("Expression to matrix preprocessing.")
             corr_df = corr_df.fillna(0.0)
             corr_df[corr_df != 0] = 1.0
-            corr_df = corr_df.T
-            coocc = numpy.array(corr_df.T.dot(corr_df))
-            cov = numpy.corrcoef(corr_df)
+            corr_df = corr_df.to_numpy()
+            print("Computing Correlation Coeff.")
+            corr_df_t = corr_df.T
+            print("Running Dot Product.")
+            coocc = numpy.dot(corr_df, corr_df_t)
+            print("Computing Correlation Coeff.")
+            cov = numpy.corrcoef(corr_df_t)
         else:
             coocc = pickle.load(open(coocc,"rb"))
 

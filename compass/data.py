@@ -21,28 +21,8 @@ import matplotlib.pyplot as plt
 from collections import Counter
 from scipy import stats
 import itertools
-
 from sklearn.linear_model import LinearRegression
 
-def load_barcode_chunk(row):
-    print("thread")
-    expression_subset = dict()
-    # barcode = cells[cell]
-    # expression_subset[barcode] = dict()
-    # row = normalized_matrix.getrow(cell)
-    for index in row.nonzero()[1]:
-        # symbol = index_gene[index]
-        val = row[0,index]
-        expression_subset[index] = val
-        # data[symbol].append(barcode)
-        # self.gene_frequency[symbol] += 1 
-    return expression_subset
-
-def multithread_load(chunks, threads):
-    print("Running load")
-    with Pool(threads) as p:
-        results = p.map(load_barcode_chunk, chunks)
-        exit(0)
 
 class Context(object):
 
@@ -212,7 +192,7 @@ class CompassDataset(Dataset):
         print("Vocabulary length: {}".format(self._vocab_len))
         
 
-    def create_coocurrence_matrix(self, coocc=None): 
+    def create_coocurrence_matrix(self, coocc=None):
         print("Generating Correlation matrix.")
         import pandas
         all_genes = self.data.expressed_genes
@@ -225,7 +205,7 @@ class CompassDataset(Dataset):
             for cell, genes in tqdm.tqdm(expression_set):
                 for gene in all_genes:
                     if gene in genes:
-                        corr_matrix[gene].append(genes[gene])
+                        corr_matrix[gene].append(1)
                     else:
                         corr_matrix[gene].append(0)
 

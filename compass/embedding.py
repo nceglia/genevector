@@ -1,6 +1,7 @@
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.manifold import TSNE
 from sklearn.cluster import AgglomerativeClustering, KMeans
+from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
 import matplotlib
@@ -86,6 +87,8 @@ class GeneEmbedding(object):
 
     def cluster(self, n=12):
         kmeans = KMeans(n_clusters=n)
+        # scaler = StandardScaler()
+        # vector =    scaler.fit_transform(self.vector)
         kmeans.fit(self.vector)
         clusters = kmeans.labels_
         clusters = zip(self.context.expressed_genes, clusters)
@@ -443,7 +446,7 @@ class CellEmbedding(object):
             i += 1
 
     def cluster(self, k=12):
-        kmeans = KMeans(n_clusters=k)
+        kmeans = KMeans(n_clusters=k, )
         kmeans.fit(self.matrix)
         clusters = kmeans.labels_
         _clusters = []

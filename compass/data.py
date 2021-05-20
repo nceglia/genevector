@@ -96,23 +96,6 @@ class Context(object):
             for cell in cells:
                 cell_to_gene[cell].append(gene)
         return cell_to_gene
-    
-    def set_lower_bound_on_frequency(self, frequency):
-        self.frequency_lower_bound = frequency
-
-    @staticmethod
-    def filter_gene(symbol):
-        symbol = symbol.lower()
-        if symbol.startswith("rp") \
-           or symbol.startswith("mt-") \
-           or "." in symbol \
-           or "rik" in symbol.lower() \
-           or "linc" in symbol.lower() \
-           or "orf" in symbol.lower() \
-           or "ercc" in symbol.lower() \
-           or symbol.startswith("gm"):
-            return True
-        return False
 
     def expression(self, normalized_matrix, genes, cells, expression=None):
         gene_index, index_gene = Context.index_geneset(genes)
@@ -182,12 +165,13 @@ class Context(object):
 
 class CompassDataset(Dataset):
 
-    def __init__(self, adata, features=[], expression=None, coocc=None):
+    def __init__(self, adata, features=[], expression=None, coocc=None, device="cpu"):
         self.data = Context.build(adata,expression=expression)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene
         self._vocab_len = len(self._word2id)
         self.features = features
+        self.device = device
         self.create_coocurrence_matrix(coocc=coocc)
         print("Vocabulary length: {}".format(self._vocab_len))
         
@@ -197,26 +181,12 @@ class CompassDataset(Dataset):
         import pandas
         all_genes = self.data.expressed_genes
         if coocc == None:
-            corr_matrix = collections.defaultdict(list)
-
-            expression_set = list(self.data.expression.items())
-
-            print("Generating Coeffs.")
-            for cell, genes in tqdm.tqdm(expression_set):
-                for gene in all_genes:
-                    if gene in genes:
-                        corr_matrix[gene].append(1)
-                    else:
-                        corr_matrix[gene].append(0)
-
-            corr_df = pandas.DataFrame.from_dict(corr_matrix)
-
-            print("Decomposing")
+            corr_df = pandas.DataFrame.from_dict(self.data.expression)
+            corr_df = corr_df.fillna(0.0)
+            corr_df[corr_df != 0] = 1.0
+            corr_df = corr_df.T
             coocc = numpy.array(corr_df.T.dot(corr_df))
-            print(coocc)
-            # df = pandas.DataFrame(corr_matrix, columns=all_genes)
-            # corr_matrix = numpy.transpose(df.to_numpy())
-            # cov = numpy.corrcoef(corr_matrix)
+            cov = numpy.corrcoef(corr_df)
         else:
             coocc = pickle.load(open(coocc,"rb"))
 
@@ -224,7 +194,7 @@ class CompassDataset(Dataset):
         self._j_idx = list()
         self._xij = list()
 
-        for gene, row in zip(all_genes, coocc):
+        for gene, row in zip(all_genes, cov):
             for cgene, value in zip(all_genes, row):
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
@@ -235,11 +205,17 @@ class CompassDataset(Dataset):
                 else:
                     self._xij.append(1.0)
 
-        self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
-        self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()
-        self._xij = torch.cuda.FloatTensor(self._xij).cuda()
+        if self.device == "cuda":
+            self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
+            self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()
+            self._xij = torch.cuda.FloatTensor(self._xij).cuda()
+        else:
+            self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
+            self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
+            self._xij = torch.FloatTensor(self._xij).to("cpu")
 
         self.coocc = coocc
+        self.cov = cov
 
 
     def get_batches(self, batch_size):

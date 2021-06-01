@@ -18,7 +18,10 @@ from torch.nn.init import xavier_normal
 def weight_func(x, x_max, alpha, device):
     wx = (x/x_max)**alpha
     wx = torch.min(wx, torch.ones_like(wx))
-    return wx.cuda()
+    # if device == "cuda":
+    #     return wx.cuda()
+    # else:
+    return wx.to(device)
 
 def wmse_loss(weights, inputs, targets, device):
     loss = F.mse_loss(inputs, targets, reduction='none')

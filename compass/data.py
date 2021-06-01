@@ -103,12 +103,7 @@ class Context(object):
         data = collections.defaultdict(list)
         if expression == None:
             self.expression = collections.defaultdict(dict)
-<<<<<<< HEAD
             nonzero = find(normalized_matrix > 1)
-=======
-            #normalized_matrix = normalized_matrix > 1
-            nonzero = find(normalized_matrix)
->>>>>>> b47485c979aed05a503b6789ecea994937f9dc3a
             print("Loading Expression.")
             
             nonindexed_expression = collections.defaultdict(dict)

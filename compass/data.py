@@ -103,7 +103,7 @@ class Context(object):
         data = collections.defaultdict(list)
         if expression == None:
             self.expression = collections.defaultdict(dict)
-            nonzero = find(normalized_matrix)
+            nonzero = find(normalized_matrix > 1)
             print("Loading Expression.")
             
             nonindexed_expression = collections.defaultdict(dict)
@@ -224,7 +224,10 @@ class CompassDataset(Dataset):
 
 
     def get_batches(self, batch_size):
-        rand_ids = torch.cuda.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))
+        if self.device == "cuda":
+            rand_ids = torch.cuda.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))
+        else:
+            rand_ids = torch.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))
         for p in range(0, len(rand_ids), batch_size):
             batch_ids = rand_ids[p:p+batch_size]
             yield self._xij[batch_ids], self._i_idx[batch_ids], self._j_idx[batch_ids]

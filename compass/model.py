@@ -78,8 +78,6 @@ class CompassTrainer(object):
         self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
         self.x_max = x_max
         self.alpha = alpha
-        
-
 
     def train(self, epochs):
         n_batches = int(len(self.dataset._xij) / self.batch_size)

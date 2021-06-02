@@ -178,65 +178,39 @@ class CompassDataset(Dataset):
 
     def create_coocurrence_matrix(self, coocc=None, cov=None):
         print("Generating Correlation matrix.")
+        print("Generating Correlation matrix.")
         import pandas
-        all_genes = self.data.expressed_genes
-        if coocc == None:
-            """
-            corr_df = pandas.DataFrame.from_dict(self.data.expression)
-            print("Expression to matrix preprocessing.")
-            corr_df = corr_df.fillna(0.0)
-            corr_df[corr_df != 0] = 1.0
-            corr_df = corr_df.T
-            corr_df = corr_df[all_genes]
-            corr_matrix = dict()
-            for x in corr_df.keys():
-                corr_matrix[x] = [int(x) for x in corr_df[x].tolist()]
-            del corr_df
-            gc.collect()
-            corr_x = pandas.DataFrame.from_dict(corr_matrix)
-            coocc = numpy.array(corr_x.T.dot(corr_x))
-            cov = numpy.corrcoef(corr_x.to_numpy())
-            """
-            from sklearn import feature_extraction
-            vectorizer = feature_extraction.DictVectorizer(sparse=True)
-            matrix = vectorizer.fit_transform(list(self.data.expression.values()))
-            matrix[matrix != 0] = 1
-            genes = vectorizer.feature_names_
+        # all_genes_exp = self.data.expressed_genes
 
-            keep = []
-            _genes = []
-            for gene in genes:
-                if gene in all_genes:
-                    keep.append(True)
-                    _genes.append(gene)
-                else:
-                    keep.append(False)
-            genes = _genes
-            matrix = matrix[:,keep]
+        from sklearn import feature_extraction
+        vectorizer = feature_extraction.DictVectorizer(sparse=True)
+        corr_matrix = vectorizer.fit_transform(list(self.data.expression.values()))
+        corr_matrix[corr_matrix != 0] = 1
 
-            coocc = matrix.T.dot(matrix)
-            N = matrix.shape[0]
-            C=((coocc -(sum(coocc).T*sum(coocc)/N))/(N-1)).todense()
-            V=numpy.sqrt(numpy.mat(numpy.diag(C)).T*numpy.mat(numpy.diag(C)))
-            cov = numpy.divide(C,V+1e-119)
-        else:
-            coocc = pickle.load(open(coocc,"rb"))
-            cov = pickle.load(open(cov,"rb"))
+        all_genes = vectorizer.feature_names_
 
-        gene_index = {w: idx for (idx, w) in enumerate(genes)}
-        index_gene = {idx: w for (idx, w) in enumerate(genes)}
+        gene_index = {w: idx for (idx, w) in enumerate(all_genes)}
+        index_gene = {idx: w for (idx, w) in enumerate(all_genes)}
         self.data.gene2id = gene_index
         self.data.id2gene = index_gene
+        self.data.expressed_genes = all_genes
+
+        corr_matrix = pandas.DataFrame(data=corr_matrix.todense(),columns=all_genes)
+        corr_matrix = corr_matrix[all_genes]
+        corr_df = corr_matrix
+
+        print("Decomposing")
+        coocc = numpy.array(corr_df.T.dot(corr_df))
+
+        corr_matrix = numpy.transpose(corr_matrix.to_numpy())
+        cov = numpy.corrcoef(corr_matrix)
 
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
 
-        cov = numpy.array(cov)
-        numpy.nan_to_num(cov,-1.0)
-
-        for gene, row in zip(genes, cov):
-            for cgene, value in zip(genes, row):
+        for gene, row in zip(all_genes, cov):
+            for cgene, value in zip(all_genes, row):
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)

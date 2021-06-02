@@ -252,7 +252,7 @@ class GeneEmbedding(object):
         plt.figure()
         matrix = numpy.array(similarity_matrix)
         df = pandas.DataFrame(matrix,index=markers,columns=markers)
-        sns.clustermap(df,cbar_pos=None,figsize=(12,12), dendrogram_ratio=0.1, cmap="mako",row_colors=row_colors,yticklabels=True)
+        sns.clustermap(df,cbar_pos=None,figsize=(12,12), dendrogram_ratio=0.1, cmap="mako",row_colors=row_colors,yticklabels=True,xticklabels=True)
         handles = [Patch(facecolor=type_color[name]) for name in type_color]
         plt.legend(handles, type_color, title='Gene Cluster',
                 bbox_to_anchor=(1, 1), bbox_transform=plt.gcf().transFigure, loc='upper right')
@@ -577,7 +577,7 @@ class CellEmbedding(object):
             plt.show()
         return pcs
 
-    def plot_distance(self, vector, pcs=None, threshold=0.0, method="TSNE"):
+    def plot_distance(self, vector, pcs=None, threshold=0.0, method="TSNE", title=None):
         plt.figure(figsize = (8,8))
         ax = plt.subplot(1,1, 1)
         if type(pcs) != numpy.ndarray:
@@ -604,6 +604,8 @@ class CellEmbedding(object):
         data = {"x":pcs[0],"y":pcs[1],"Distance": distances}
         df = pandas.DataFrame.from_dict(data)
         sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7)
+        if title != None:
+            plt.title(title)
         return pcs
 
     def plot_gene_tsne(self, title, ax, genes, pcs=None):

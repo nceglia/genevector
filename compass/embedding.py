@@ -45,7 +45,7 @@ class GeneEmbedding(object):
         self.embedding_file = embedding_file
         self.vector = []
         self.genes = []
-        for gene in tqdm.tqdm(self.context.expressed_genes):
+        for gene in tqdm.tqdm(self      ):
             if gene in self.embeddings:
                 self.vector.append(self.embeddings[gene])
                 self.genes.append(gene)
@@ -389,7 +389,7 @@ class CellEmbedding(object):
                         self.data[cell].append(embed.embeddings[gene])
                         self.weights[cell].append(weight)
         self.matrix = []
-        dataset_vector = []
+        dataset_vector = [] 
         for cell, vectors in tqdm.tqdm(list(self.data.items())):
             weights = self.weights[cell]
             xvec = list(numpy.average(vectors, axis=0, weights=weights))
@@ -608,280 +608,8 @@ class CellEmbedding(object):
             plt.title(title)
         return pcs
 
-    def plot_gene_tsne(self, title, ax, genes, pcs=None):
-        expression = [0 for _ in range(len(list(self.data.keys())))]
-        for gene in genes:
-            for i, cell in enumerate(self.data.keys()):
-                if gene in self.expression[cell]:
-                    expression[i] += self.expression[cell][gene]
-        if type(pcs) != numpy.ndarray:
-            pca = TSNE(n_components=2)
-            pcs = pca.fit_transform(self.matrix)
-            pcs = numpy.transpose(pcs)
-        data = {"x":pcs[0],"y":pcs[1],"Gene Expression": expression}
-        df = pandas.DataFrame.from_dict(data)
-        sns.scatterplot(data=df,x="x", y="y", hue='Gene Expression', ax=ax,linewidth=0.00,s=7,alpha=0.7)
-        ax.set_title(title,fontsize=16)
-        return pcs
-
-    def plot_gene_expression(self, genes, pcs=None, png=None):
+    def plot_distance_grid(self, vectors, labels, pcs=None, threshold=-1.0, method="UMAP"):
         plt.figure(figsize = (8,8))
-        ax = plt.subplot(1,1, 1)
-        pcs = self.plot_gene_tsne(",".join(genes[:10]), ax, genes, pcs=pcs)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        if not png:
-            plt.show()
-        else:
-            plt.savefig(png)
-            plt.close()
-        return pcs
-    
-    def plot_similarity_matrix(self, vectors, column):
-        similarity_matrix = []
-        plt.figure(figsize = (12, 10))
-        barcode_to_label = dict(zip(cembed.context.metadata.index, cembed.context.metadata[column]))
-        ctypes = cembed.group_cell_vectors()
-        matrix = []
-        clusters = list(vectors.keys())
-        celltypes = list(cytpes.keys())
-        for cluster, genes in vectors.items():
-            vector = embed.generate_vector(genes)
-            row = []
-            for cell in ctypes.keys():
-                distance = float(cosine_similarity(numpy.array(ctypes[cell]).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
-                row.append()
-            matrix.append(row)
-        matrix = numpy.array(matrix)
-        df = pandas.DataFrame(matrix,index=celltypes,columns=celltypes)
-        sns.clustermap(df,figsize=(17,8))
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_path,"celltype_similarities_{}.png".format(sample)))
-
-
-class FeatureEmbedding(object):
-
-    def __init__(self, compass_dataset, cembed, feature="clonotype"):
-        self.context = compass_dataset.data
-        cell_to_gene = list(self.context.cell_to_gene.items())
-        self.embed = embed
-        self.expression = self.context.expression
-        self.data = collections.defaultdict(list)
-        self.weights = collections.defaultdict(list)
-        self.pcs = dict()
-
-        cell_to_tcr = dict()
-        for bc, tcr in zip(cembed.context.adata.obs.index, cembed.context.adata.obs["clonotype"].tolist()):
-            cell_to_tcr[bc] = tcr
-        
-        tcr_to_ds = dict()
-        for tcr, ds in zip(cembed.context.adata.obs["clonotype"].tolist(), cembed.context.adata.obs["dataset"].tolist()):
-            tcr_to_ds[tcr] = ds
-        
-        tcr_to_sbs = collections.defaultdict(list)
-        tcr_to_sb = dict()
-        for tcr, ds in zip(cembed.context.adata.obs["clonotype"].tolist(), cembed.context.adata.obs["validated"].tolist()):
-            tcr_to_sbs[tcr].append(ds)
-
-        def most_frequent(List):
-            return max(set(List), key = List.count)
-
-        for tcr, sbs in tcr_to_sbs.items():
-            tcr_to_sb[tcr] = most_frequent(sbs)
-
-
-        self.matrix = []
-        dataset_vector = []
-        for cell, vectors in self.data.items():
-            weights = self.weights[cell]
-            xvec = list(numpy.average(vectors, axis=0, weights=weights))
-            self.matrix.append(xvec)
-            dataset_vector += vectors
-
-        self.dataset_vector = numpy.average(dataset_vector, axis=0)
-        _matrix = []
-        for vec in self.matrix:
-            _matrix.append(numpy.subtract(vec, self.dataset_vector))
-        self.matrix = _matrix
-
-    def batch_correct(self, column=None, resolution=1):
-        if not column:
-            raise ValueError("Must supply batch label to correct.")
-        self.cluster(k=resolution)
-        column_labels = dict(zip(self.context.cells,self.context.metadata[column]))
-        labels = []
-        for key in self.data.keys():
-            labels.append(column_labels[key])
-        local_correction = collections.defaultdict(lambda : collections.defaultdict(list))
-        correction_vectors = collections.defaultdict(dict)
-        for cluster, batch, vec in zip(self.clusters, labels, self.matrix):
-            local_correction[cluster][batch].append(vec)
-        for cluster, batches in local_correction.items():
-            cluster_vec = []
-            batch_keys = list(batches.keys())
-            base_batch = batch_keys.pop(0)
-            max_distance = 1.0
-            cluster_vec = numpy.average(batches[base_batch], axis=0)
-            for batch in batch_keys:
-                bvec = list(numpy.average(batches[batch], axis=0))
-                distance = float(cosine_similarity(numpy.array(bvec).reshape(1, -1),numpy.array(cluster_vec).reshape(1, -1))[0])
-                if max_distance > distance:
-                    max_distance = distance
-                offset = numpy.subtract(cluster_vec,bvec)
-                bvec = numpy.add(bvec,offset)
-                distance = float(cosine_similarity(numpy.array(bvec).reshape(1, -1),numpy.array(cluster_vec).reshape(1, -1))[0])
-                correction_vectors[cluster][batch] = offset
-
-        self.matrix = []
-        self.sample_vector = collections.defaultdict(list)
-        i = 0
-        self.cell_order = []
-        for cell, vectors in self.data.items():
-            cluster = self.clusters[i]
-            xvec = list(numpy.average(vectors, axis=0))
-            batch = column_labels[cell]
-            if cluster in correction_vectors and batch in correction_vectors[cluster]:
-                offset = correction_vectors[cluster][batch]
-                xvec = numpy.add(xvec,offset)
-            self.matrix.append(xvec)
-            self.cell_order.append(cell)
-            i += 1
-
-    def cluster(self, k=12):
-        kmeans = KMeans(n_clusters=k)
-        kmeans.fit(self.matrix)
-        clusters = kmeans.labels_
-        _clusters = []
-        for cluster in clusters:
-            _clusters.append("C"+str(cluster))
-        self.clusters = _clusters
-        return _clusters
-    
-    def annotate_clusters(self, annotations):
-        _clusters = []
-        for cluster in self.clusters:
-            if cluster in annotations:
-                _clusters.append(annotations[cluster])
-            else:
-                _clusters.append(cluster)
-        self.clusters = _clusters
-
-    def subtract_vector(self, vector):
-        corrected_matrix = []
-        for cell_vector in self.matrix:
-            corrected_matrix.append(numpy.subtract(cell_vector, vector))
-        self.matrix = corrected_matrix
-
-    def cluster_definitions(self):
-        gene_similarities = dict()
-        vectors = collections.defaultdict(list)
-        for vec, label in zip(self.matrix, self.clusters):
-            vectors[label].append(vec)
-        for label, vecs in vectors.items():
-            distances = dict()
-            cell_vector = list(numpy.mean(vecs, axis=0))
-            for gene, vector in self.embed.embeddings.items():
-                distance = float(cosine_similarity(numpy.array(cell_vector).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
-                distances[gene] = distance
-            sorted_distances = list(reversed(sorted(distances.items(), key=operator.itemgetter(1))))
-            gene_similarities[label] = [x[0] for x in sorted_distances]
-            print(label, sorted_distances[:10])
-        return gene_similarities
-
-    def cluster_definitions_as_df(self, similarities, top_n=20):
-        clusters = []
-        symbols = []
-        for key, genes in similarities.items():
-            clusters.append(key)
-            symbols.append(", ".join(genes[:top_n]))
-        df = pandas.DataFrame.from_dict({"Cluster Name":clusters, "Top Genes":symbols})
-        return df
-
-    def group_cell_vectors(self, barcode_to_label):
-        label_vector = dict()
-        labels = []
-        for cell, vectors in self.data.items():
-            vector = list(numpy.median(vectors, axis=0))
-            labels.append(barcode_to_label[cell])
-            label_vector[barcode_to_label[cell]] = vector
-        for cell, vectors in self.data.items():
-            _vectors = []
-            for vector in vectors:
-                _vectors.append(numpy.subtract(vector, label_vector[barcode_to_label[cell]]))
-            vectors = _vectors
-            vector = list(numpy.median(vectors, axis=0))
-            label_vector[barcode_to_label[cell]] = vector
-        return label_vector, labels
-
-    def compute_cell_similarities(self, barcode_to_label):
-        vectors = dict()
-        cell_similarities = dict()
-        vectors, labels = self.group_cell_vectors(barcode_to_label)
-        for label, vector in vectors.items():
-            distances = dict()
-            for label2, vector2 in vectors.items():
-                xdist = []
-                distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(vector2).reshape(1, -1))[0])
-                xdist.append(distance)
-                distances[label2] = distance
-            cell_similarities[label] = distances
-        return cell_similarities
-
-    def plot_reduction(self, ax, pcs=None, method="TSNE", clusters=None, labels=None):
-        if type(pcs) != numpy.ndarray:
-            if method == "TSNE":
-                if method not in self.pcs:
-                    print("Running t-SNE")
-                    pca = TSNE(n_components=2, n_jobs=-1, metric="cosine")
-                    pcs = pca.fit_transform(self.matrix)
-                    pcs = numpy.transpose(pcs)
-                    print("Finished.")
-                    self.pcs[method] = pcs
-                else:
-                    print("Loading TSNE")
-                    pcs = self.pcs[method]
-            else:
-                if method not in self.pcs:
-                    print("Running UMAP")
-                    trans = umap.UMAP(random_state=42,metric='cosine').fit(self.matrix)
-                    x = trans.embedding_[:, 0]
-                    y = trans.embedding_[:, 1]
-                    pcs = [x,y]
-                    print("Finished.")
-                    self.pcs[method] = pcs
-                else:
-                    print("Loading UMAP")
-                    pcs = self.pcs[method]
-        data = {"x":pcs[0],"y":pcs[1],"Cluster": clusters}
-        df = pandas.DataFrame.from_dict(data)
-        sns.scatterplot(data=df,x="x", y="y", hue='Cluster', ax=ax,linewidth=0.1,s=13,alpha=1.0)
-        return pcs
-
-    def plot(self, png=None, pcs=None, method="TSNE", column=None):
-        if column:
-            column_labels = dict(zip(self.context.cells,self.context.metadata[column]))
-            labels = []
-            for key in self.data.keys():
-                labels.append(column_labels[key])
-        else:
-            labels = self.clusters
-        plt.figure(figsize = (8, 8))
-        ax1 = plt.subplot(1,1,1)
-        pcs = self.plot_reduction(ax1, pcs=pcs, clusters=labels, method=method)
-        plt.xlabel("{}-1".format(method))
-        plt.ylabel("{}-2".format(method))
-        ax1.set_xticks([])
-        ax1.set_yticks([])
-        if png:
-            plt.savefig(png)
-            plt.close()
-        else:
-            plt.show()
-        return pcs
-
-    def plot_distance(self, vector, pcs=None, threshold=0.0, method="TSNE"):
-        plt.figure(figsize = (8,8))
-        ax = plt.subplot(1,1, 1)
         if type(pcs) != numpy.ndarray:
             if method not in self.pcs:
                 if method == "TSNE":
@@ -895,18 +623,30 @@ class FeatureEmbedding(object):
                     pcs = [x,y]
             else:
                 pcs = self.pcs[method]
-        distances = []
-        dataset_distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(self.dataset_vector).reshape(1, -1))[0])
-        for cell_vector in self.matrix:
-            distance = float(cosine_similarity(numpy.array(cell_vector).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
-            d = distance-dataset_distance
-            if d < threshold:
-                d = -1.0
-            distances.append(d)
-        data = {"x":pcs[0],"y":pcs[1],"Distance": distances}
-        df = pandas.DataFrame.from_dict(data)
-        sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7)
-        return pcs
+        i = 0
+        num_plots = len(vectors)
+        import math
+        square = int(math.ceil(math.sqrt(num_plots)))
+        for vector, label in zip(vectors, labels):
+            ax = plt.subplot(square,square,i+1)
+            distances = []
+            dataset_distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(self.dataset_vector).reshape(1, -1))[0])
+            for cell_vector in self.matrix:
+                distance = float(cosine_similarity(numpy.array(cell_vector).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
+                d = distance-dataset_distance
+                if d < threshold:
+                    d = -1.0
+                distances.append(d)
+            data = {"x":pcs[0],"y":pcs[1],"Distance": distances}
+            df = pandas.DataFrame.from_dict(data)
+            sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7)
+            ax.set_title(label)
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            ax.get_legend().remove()
+            i += 1
+        plt.tight_layout()
+        plt.show()
 
     def plot_gene_tsne(self, title, ax, genes, pcs=None):
         expression = [0 for _ in range(len(list(self.data.keys())))]

@@ -20,7 +20,7 @@ from sklearn.neighbors import KernelDensity
 import matplotlib.pyplot as plt
 from collections import Counter
 from scipy import stats
-import itertools
+import itertools    
 from sklearn.linear_model import LinearRegression
 import gc
 
@@ -103,7 +103,7 @@ class Context(object):
         data = collections.defaultdict(list)
         if expression == None:
             self.expression = collections.defaultdict(dict)
-            nonzero = find(normalized_matrix > 1)
+            nonzero = find(normalized_matrix > 0)
             print("Loading Expression.")
             
             nonindexed_expression = collections.defaultdict(dict)

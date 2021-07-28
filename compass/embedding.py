@@ -2,7 +2,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.manifold import TSNE
 from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MaxAbsScaler
 import matplotlib.pyplot as plt
 import matplotlib
 import seaborn as sns
@@ -45,10 +45,10 @@ class GeneEmbedding(object):
         self.embedding_file = embedding_file
         self.vector = []
         self.genes = []
-        for gene in tqdm.tqdm(self      ):
-            if gene in self.embeddings:
-                self.vector.append(self.embeddings[gene])
-                self.genes.append(gene)
+        for gene in tqdm.tqdm(self.embeddings.keys()):
+            # if gene in self.embeddings:
+            self.vector.append(self.embeddings[gene])
+            self.genes.append(gene)
 
     def read_embedding(self, filename):
         embedding = dict()
@@ -78,6 +78,21 @@ class GeneEmbedding(object):
                 continue
             v = self.embeddings[target]
             distance = float(cosine_similarity(numpy.array(embedding).reshape(1, -1),numpy.array(v).reshape(1, -1))[0])
+            distances[target] = distance
+        sorted_distances = list(reversed(sorted(distances.items(), key=operator.itemgetter(1))))
+        genes = [x[0] for x in sorted_distances]
+        distance = [x[1] for x in sorted_distances]
+        df = pandas.DataFrame.from_dict({"Gene":genes, "Similarity":distance})
+        return df
+
+    def get_similar_genes(self, vector):
+        distances = dict()
+        targets = list(self.embeddings.keys())
+        for target in targets:
+            if target not in self.embeddings:
+                continue
+            v = self.embeddings[target]
+            distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(v).reshape(1, -1))[0])
             distances[target] = distance
         sorted_distances = list(reversed(sorted(distances.items(), key=operator.itemgetter(1))))
         genes = [x[0] for x in sorted_distances]
@@ -370,7 +385,7 @@ class GeneEmbedding(object):
 
 class CellEmbedding(object):
 
-    def __init__(self, compass_dataset, embed, include_features=True, feature_weight=1.0):
+    def __init__(self, compass_dataset, embed, num_features, include_features=True, feature_weight=1.0):
         self.context = compass_dataset.data
         cell_to_gene = list(self.context.cell_to_gene.items())
         self.embed = embed
@@ -378,6 +393,47 @@ class CellEmbedding(object):
         self.data = collections.defaultdict(list)
         self.weights = collections.defaultdict(list)
         self.pcs = dict()
+        embed_genes = list(embed.embeddings.keys())
+        empty_vec = [0.0 for _ in range(num_features)]
+        for cell, genes in tqdm.tqdm(cell_to_gene):
+            if len(genes) < 2: continue
+            if cell in self.expression:
+                cell_weights = self.expression[cell]
+                for gene in embed_genes:
+                    if gene in cell_weights:
+                        weight = self.expression[cell][gene]
+                        self.data[cell].append(embed.embeddings[gene])
+                        self.weights[cell].append(weight)
+                    else:
+                        weight = 0.0
+                        self.data[cell].append(empty_vec)
+                        self.weights[cell].append(0.0)
+        df = pandas.DataFrame.from_dict(self.weights)
+        df = df.to_numpy()
+        scaler = StandardScaler()
+        weights = scaler.fit_transform(df.T)
+        scaled_weights = dict()
+        for cid, w in zip(cell_to_gene,weights):
+            scaled_weights[cid[0]] = w
+        self.weights = scaled_weights
+        self.matrix = []
+        dataset_vector = [] 
+        for cell, vectors in tqdm.tqdm(list(self.data.items())):
+            weights = self.weights[cell]
+            vectors = numpy.array(vectors)
+            xvec = list(numpy.average(vectors, axis=0, weights=weights))
+            self.matrix.append(xvec)
+            dataset_vector += list(vectors)
+        self.dataset_vector = numpy.average(dataset_vector, axis=0)
+        _matrix = []
+        for vec in self.matrix:
+            _matrix.append(numpy.subtract(vec, self.dataset_vector))
+        self.matrix = _matrix
+
+    def unscaled_matrix(self):
+        cell_to_gene = list(self.context.cell_to_gene.items())
+        self.unscaled_data = collections.defaultdict(list)
+        self.unscaled_weights = collections.defaultdict(list)
 
         for cell, genes in tqdm.tqdm(cell_to_gene):
             if len(genes) < 2: continue
@@ -386,21 +442,15 @@ class CellEmbedding(object):
                 for gene in set(genes).intersection(set(embed.embeddings.keys())):
                     if gene in cell_weights:
                         weight = self.expression[cell][gene]
-                        self.data[cell].append(embed.embeddings[gene])
-                        self.weights[cell].append(weight)
-        self.matrix = []
-        dataset_vector = [] 
-        for cell, vectors in tqdm.tqdm(list(self.data.items())):
-            weights = self.weights[cell]
+                        self.unscaled_data[cell].append(embed.embeddings[gene])
+                        self.unscaled_weights[cell].append(weight)
+        self.unscaled_matrix = []
+        unscaled_dataset_vector = []
+        for cell, vectors in tqdm.tqdm(list(self.unscaled_data.items())):
+            weights = self.unscaled_weights[cell]
             xvec = list(numpy.average(vectors, axis=0, weights=weights))
-            self.matrix.append(xvec)
-            dataset_vector += vectors
-
-        self.dataset_vector = numpy.average(dataset_vector, axis=0)
-        _matrix = []
-        for vec in self.matrix:
-            _matrix.append(numpy.subtract(vec, self.dataset_vector))
-        self.matrix = _matrix
+            self.unscaled_matrix.append(xvec)
+            unscaled_dataset_vector += vectors
 
     def batch_correct(self, column=None, resolution=1):
         if not column:
@@ -446,8 +496,8 @@ class CellEmbedding(object):
             i += 1
 
     def cluster(self, k=12):
-        kmeans = KMeans(n_clusters=k, )
-        kmeans.fit(self.matrix)
+        kmeans = KMeans(n_clusters=k)
+        kmeans.fit(self.unscaled_matrix)
         clusters = kmeans.labels_
         _clusters = []
         for cluster in clusters:
@@ -495,26 +545,33 @@ class CellEmbedding(object):
         df = pandas.DataFrame.from_dict({"Cluster Name":clusters, "Top Genes":symbols})
         return df
 
-    def group_cell_vectors(self, barcode_to_label):
-        label_vector = dict()
+    def _cell_vectors(self, barcode_to_label):
+        label_vector = collections.defaultdict(list)
         labels = []
+        results = dict()
         for cell, vectors in self.data.items():
-            vector = list(numpy.median(vectors, axis=0))
-            labels.append(barcode_to_label[cell])
-            label_vector[barcode_to_label[cell]] = vector
-        for cell, vectors in self.data.items():
-            _vectors = []
-            for vector in vectors:
-                _vectors.append(numpy.subtract(vector, label_vector[barcode_to_label[cell]]))
-            vectors = _vectors
-            vector = list(numpy.median(vectors, axis=0))
-            label_vector[barcode_to_label[cell]] = vector
+            #vector = list(numpy.median(vectors, axis=0))
+                for vec in vectors:
+                    if sum(list(vec)) == 0:
+                        continue
+                        labels.append(barcode_to_label[cell])
+            label_vector[barcode_to_label[cell]] += vectors
+        for label in set(labels):
+            vector = list(numpy.median(label_vector[label], axis=0))
+            results[label]
+        # for cell, vectors in self.data.items():
+        #     _vectors = []
+        #     for vector in vectors:
+        #         _vectors.append(numpy.subtract(vector, label_vector[barcode_to_label[cell]]))
+        #     vectors = _vectors
+        #     vector = list(numpy.median(vectors, axis=0))
+        #     label_vector[barcode_to_label[cell]] = vector
         return label_vector, labels
 
     def compute_cell_similarities(self, barcode_to_label):
         vectors = dict()
         cell_similarities = dict()
-        vectors, labels = self.group_cell_vectors(barcode_to_label)
+        vectors, labels = self._cell_vectors(barcode_to_label)
         for label, vector in vectors.items():
             distances = dict()
             for label2, vector2 in vectors.items():
@@ -681,7 +738,7 @@ class CellEmbedding(object):
         similarity_matrix = []
         plt.figure(figsize = (12, 10))
         barcode_to_label = dict(zip(cembed.context.metadata.index, cembed.context.metadata[column]))
-        ctypes = cembed.group_cell_vectors()
+        ctypes = cembed._cell_vectors()
         matrix = []
         clusters = list(vectors.keys())
         celltypes = list(cytpes.keys())

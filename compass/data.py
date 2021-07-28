@@ -109,7 +109,7 @@ class Context(object):
             nonindexed_expression = collections.defaultdict(dict)
             for cell, gene_i, val in tqdm.tqdm(list(zip(*nonzero))):
                 symbol = index_gene[gene_i]
-                nonindexed_expression[cell][symbol] = val
+                nonindexed_expression[cell][symbol] = normalized_matrix[cell,gene_i]
             
             print("Reindexing Cooc")
             for cell, genes in tqdm.tqdm(list(nonindexed_expression.items())):

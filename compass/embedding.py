@@ -1,7 +1,7 @@
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.manifold import TSNE
 from sklearn.cluster import AgglomerativeClustering, KMeans
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.preprocessing import MaxAbsScaler
 import matplotlib.pyplot as plt
 import matplotlib
@@ -385,7 +385,7 @@ class GeneEmbedding(object):
 
 class CellEmbedding(object):
 
-    def __init__(self, compass_dataset, embed, num_features, include_features=True, feature_weight=1.0):
+    def __init__(self, compass_dataset, embed):
         self.context = compass_dataset.data
         cell_to_gene = list(self.context.cell_to_gene.items())
         self.embed = embed
@@ -394,7 +394,7 @@ class CellEmbedding(object):
         self.weights = collections.defaultdict(list)
         self.pcs = dict()
         embed_genes = list(embed.embeddings.keys())
-        empty_vec = [0.0 for _ in range(num_features)]
+
         for cell, genes in tqdm.tqdm(cell_to_gene):
             if len(genes) < 2: continue
             if cell in self.expression:
@@ -404,24 +404,15 @@ class CellEmbedding(object):
                         weight = self.expression[cell][gene]
                         self.data[cell].append(embed.embeddings[gene])
                         self.weights[cell].append(weight)
-                    else:
-                        weight = 0.0
-                        self.data[cell].append(empty_vec)
-                        self.weights[cell].append(0.0)
-        df = pandas.DataFrame.from_dict(self.weights)
-        df = df.to_numpy()
-        scaler = StandardScaler()
-        weights = scaler.fit_transform(df.T)
-        scaled_weights = dict()
-        for cid, w in zip(cell_to_gene,weights):
-            scaled_weights[cid[0]] = w
-        self.weights = scaled_weights
+
         self.matrix = []
         dataset_vector = [] 
+        scaler = StandardScaler()
         for cell, vectors in tqdm.tqdm(list(self.data.items())):
             weights = self.weights[cell]
-            vectors = numpy.array(vectors)
-            xvec = list(numpy.average(vectors, axis=0, weights=weights))
+            scaled_weights = scaler.fit_transform(numpy.array(weights).reshape(-1,1))
+            scaled_weights = [x + 1.0 for x in list(scaled_weights.reshape(1,-1)[0])]
+            xvec = list(numpy.average(vectors, axis=0, weights=scaled_weights))
             self.matrix.append(xvec)
             dataset_vector += list(vectors)
         self.dataset_vector = numpy.average(dataset_vector, axis=0)
@@ -430,27 +421,6 @@ class CellEmbedding(object):
             _matrix.append(numpy.subtract(vec, self.dataset_vector))
         self.matrix = _matrix
 
-    def unscaled_matrix(self):
-        cell_to_gene = list(self.context.cell_to_gene.items())
-        self.unscaled_data = collections.defaultdict(list)
-        self.unscaled_weights = collections.defaultdict(list)
-
-        for cell, genes in tqdm.tqdm(cell_to_gene):
-            if len(genes) < 2: continue
-            if cell in self.expression:
-                cell_weights = self.expression[cell]
-                for gene in set(genes).intersection(set(embed.embeddings.keys())):
-                    if gene in cell_weights:
-                        weight = self.expression[cell][gene]
-                        self.unscaled_data[cell].append(embed.embeddings[gene])
-                        self.unscaled_weights[cell].append(weight)
-        self.unscaled_matrix = []
-        unscaled_dataset_vector = []
-        for cell, vectors in tqdm.tqdm(list(self.unscaled_data.items())):
-            weights = self.unscaled_weights[cell]
-            xvec = list(numpy.average(vectors, axis=0, weights=weights))
-            self.unscaled_matrix.append(xvec)
-            unscaled_dataset_vector += vectors
 
     def batch_correct(self, column=None, resolution=1):
         if not column:
@@ -458,7 +428,7 @@ class CellEmbedding(object):
         self.cluster(k=resolution)
         column_labels = dict(zip(self.context.cells,self.context.metadata[column]))
         labels = []
-        for key in self.data.keys():
+        for key in self.data.keys():    
             labels.append(column_labels[key])
         local_correction = collections.defaultdict(lambda : collections.defaultdict(list))
         correction_vectors = collections.defaultdict(dict)
@@ -497,7 +467,7 @@ class CellEmbedding(object):
 
     def cluster(self, k=12):
         kmeans = KMeans(n_clusters=k)
-        kmeans.fit(self.unscaled_matrix)
+        kmeans.fit(self.matrix)
         clusters = kmeans.labels_
         _clusters = []
         for cluster in clusters:
@@ -544,29 +514,6 @@ class CellEmbedding(object):
             symbols.append(", ".join(genes[:top_n]))
         df = pandas.DataFrame.from_dict({"Cluster Name":clusters, "Top Genes":symbols})
         return df
-
-    def _cell_vectors(self, barcode_to_label):
-        label_vector = collections.defaultdict(list)
-        labels = []
-        results = dict()
-        for cell, vectors in self.data.items():
-            #vector = list(numpy.median(vectors, axis=0))
-                for vec in vectors:
-                    if sum(list(vec)) == 0:
-                        continue
-                        labels.append(barcode_to_label[cell])
-            label_vector[barcode_to_label[cell]] += vectors
-        for label in set(labels):
-            vector = list(numpy.median(label_vector[label], axis=0))
-            results[label]
-        # for cell, vectors in self.data.items():
-        #     _vectors = []
-        #     for vector in vectors:
-        #         _vectors.append(numpy.subtract(vector, label_vector[barcode_to_label[cell]]))
-        #     vectors = _vectors
-        #     vector = list(numpy.median(vectors, axis=0))
-        #     label_vector[barcode_to_label[cell]] = vector
-        return label_vector, labels
 
     def compute_cell_similarities(self, barcode_to_label):
         vectors = dict()
@@ -634,9 +581,8 @@ class CellEmbedding(object):
             plt.show()
         return pcs
 
-    def plot_distance(self, vector, pcs=None, threshold=0.0, method="TSNE", title=None):
-        plt.figure(figsize = (8,8))
-        ax = plt.subplot(1,1, 1)
+    def plot_distance(self, vector, pcs=None, threshold=0.0, method="TSNE", title=None, show=True):
+
         if type(pcs) != numpy.ndarray:
             if method not in self.pcs:
                 if method == "TSNE":
@@ -660,10 +606,13 @@ class CellEmbedding(object):
             distances.append(d)
         data = {"x":pcs[0],"y":pcs[1],"Distance": distances}
         df = pandas.DataFrame.from_dict(data)
-        sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7)
-        if title != None:
-            plt.title(title)
-        return pcs
+        if show:
+            plt.figure(figsize = (8,8))
+            ax = plt.subplot(1,1, 1)
+            sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7)
+            if title != None:
+                plt.title(title)
+        return distances
 
     def plot_distance_grid(self, vectors, labels, pcs=None, threshold=-1.0, method="UMAP"):
         plt.figure(figsize = (8,8))
@@ -754,3 +703,34 @@ class CellEmbedding(object):
         sns.clustermap(df,figsize=(17,8))
         plt.tight_layout()
         plt.savefig(os.path.join(output_path,"celltype_similarities_{}.png".format(sample)))
+
+    def assign_probabilities(self, markers):
+        probs = dict()
+        for pheno, markers in markers.items():
+            vec = self.embed.generate_vector(markers)
+            probs[pheno] = self.plot_distance(vec, method="UMAP",threshold=-1.0, show=False)
+        scaler = MinMaxScaler()
+        distribution = []
+        celltypes = []
+        for k, v in probs.items():
+            distribution.append(v)
+            celltypes.append(k)
+        distribution = list(zip(*distribution))
+        res = scaler.fit_transform(numpy.array(distribution))
+        classif = []
+        probabilities = []
+        for ct in res:
+            ct = ct / ct.sum()
+            probabilities.append(ct)
+            assign = celltypes[numpy.argmax(ct)]
+            classif.append(assign)
+        umap_pts = dict(zip(list(self.data.keys()),classif))
+        nu = []
+        for bc in self.context.adata.obs.index.tolist():
+            nu.append(umap_pts[bc])
+        self.context.adata.obs["cell_type"] = nu
+        return probabilities, celltypes 
+    
+    def get_adata(self):
+        return self.context.adata.copy()
+

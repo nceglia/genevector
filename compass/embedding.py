@@ -3,6 +3,7 @@ from sklearn.manifold import TSNE
 from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.preprocessing import MaxAbsScaler
+from scipy.special import softmax
 import matplotlib.pyplot as plt
 import matplotlib
 import seaborn as sns
@@ -368,6 +369,71 @@ class GeneEmbedding(object):
         return vecs, dims
 
     @staticmethod
+    def cluster_network(genes, nxg, threshold=0.0, title="", display=True):
+        G = nxg.subgraph(genes)
+        for subg in nx.connected_components(G):
+            if len(subg) > 1:
+                if display:
+                    fig = plt.figure(figsize=(14,6))
+                    ax = plt.subplot(1,2,1)
+                    subG = G.subgraph(list(subg))
+                    centrality = dict(nx.betweenness_centrality(subG))
+                    low, *_, high = sorted(centrality.values())
+                    norm = mpl.colors.Normalize(vmin=low, vmax=high, clip=True)
+                    mapper = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.coolwarm)
+                    pos = nx.nx_agraph.graphviz_layout(subG, prog="neato",args="-Goverlap=scale -Elen=5 -Eweight=0.2")
+                    nx.draw(subG,pos,with_labels=True,
+                            node_color=[mapper.to_rgba(i) for i in centrality.values()], 
+                            node_size=100,ax=ax,font_size=16,
+                            edge_color=[[0.5,0.5,0.5,0.5] for _ in subG.edges()])
+                    vector = embed.generate_vector(list(subg))
+                    ax = plt.subplot(1,2,2)
+                    pcs = cembed.pcs["UMAP"]
+                    distances = []
+                    dataset_distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(cembed.dataset_vector).reshape(1, -1))[0])
+                    for cell_vector in cembed.matrix:
+                        distance = float(cosine_similarity(numpy.array(cell_vector).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
+                        d = distance-dataset_distance
+                        if d < threshold:
+                            d = threshold
+                        distances.append(d)
+                    data = {"x":pcs[0],"y":pcs[1],"Distance": distances}
+                    df = pandas.DataFrame.from_dict(data)
+                    sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7)
+                    if title != None:
+                        plt.title(title)
+                    plt.show()
+
+    def get_similar_genes(self, vector):
+        distances = dict()
+        targets = list(self.embeddings.keys())
+        for target in targets:
+            if target not in self.embeddings:
+                continue
+            v = self.embeddings[target]
+            distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(v).reshape(1, -1))[0])
+            distances[target] = distance
+        sorted_distances = list(reversed(sorted(distances.items(), key=operator.itemgetter(1))))
+        genes = [x[0] for x in sorted_distances]
+        distance = [x[1] for x in sorted_distances]
+        df = pandas.DataFrame.from_dict({"Gene":genes, "Similarity":distance})
+        return df
+
+    def generate_network(self, threshold=0.5):
+        G = nx.Graph()
+        a = pandas.DataFrame.from_dict(self.embeddings).to_numpy()
+        similarities = cosine_similarity(a.T)
+        genes = list(self.embeddings.keys())
+        similarities[similarities < threshold] = 0
+        edges = []
+        nz = list(zip(*similarities.nonzero()))
+        for n in tqdm.tqdm(nz):
+            edges.append((genes[n[0]],genes[n[1]]))
+        G.add_nodes_from(genes)
+        G.add_edges_from(edges)
+        return G
+
+    @staticmethod
     def average_vector_results(vec1, vec2, fname):
         output = open(fname,"w")
         vec1, dims = GeneEmbedding.read_vector(vec1)
@@ -559,6 +625,7 @@ class CellEmbedding(object):
         sns.scatterplot(data=df,x="x", y="y", hue='Cluster', ax=ax,linewidth=0.1,s=13,alpha=1.0)
         return pcs
 
+
     def plot(self, png=None, pcs=None, method="TSNE", column=None):
         if column:
             column_labels = dict(zip(self.context.cells,self.context.metadata[column]))
@@ -704,9 +771,9 @@ class CellEmbedding(object):
         plt.tight_layout()
         plt.savefig(os.path.join(output_path,"celltype_similarities_{}.png".format(sample)))
 
-    def assign_probabilities(self, markers):
+    def phenotype_probability(self, phenotype_markers, method="softmax"):
         probs = dict()
-        for pheno, markers in markers.items():
+        for pheno, markers in phenotype_markers.items():
             vec = self.embed.generate_vector(markers)
             probs[pheno] = self.plot_distance(vec, method="UMAP",threshold=-1.0, show=False)
         scaler = MinMaxScaler()
@@ -719,18 +786,24 @@ class CellEmbedding(object):
         res = scaler.fit_transform(numpy.array(distribution))
         classif = []
         probabilities = []
-        for ct in res:
-            ct = ct / ct.sum()
-            probabilities.append(ct)
-            assign = celltypes[numpy.argmax(ct)]
-            classif.append(assign)
+        if method=="normalized":
+            for ct in res:
+                ct = ct / ct.sum()
+                probabilities.append(ct)
+                assign = celltypes[numpy.argmax(ct)]
+                classif.append(assign)
+        if method=="softmax":
+            probabilities = softmax(distribution,axis=1)
+            for ct in probabilities:
+                assign = celltypes[numpy.argmax(ct)]
+                classif.append(assign)
         umap_pts = dict(zip(list(self.data.keys()),classif))
         nu = []
         for bc in self.context.adata.obs.index.tolist():
             nu.append(umap_pts[bc])
         self.context.adata.obs["cell_type"] = nu
-        return probabilities, celltypes 
-    
+        return {"distances":distribution, "order":celltypes, "probabilities":probabilities} 
+        
     def get_adata(self):
         return self.context.adata.copy()
 

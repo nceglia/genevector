@@ -102,61 +102,23 @@ class GeneEmbedding(object):
         df = pandas.DataFrame.from_dict({"Gene":genes, "Similarity":distance})
         return df
 
-    # def cluster(self, n=12):
-    #     kmeans = KMeans(n_clusters=n)
-    #     # scaler = StandardScaler()
-    #     # vector =    scaler.fit_transform(self.vector)
-    #     kmeans.fit(self.vector)
-    #     clusters = kmeans.labels_
-    #     clusters = zip(self.context.expressed_genes, clusters)
-    #     _clusters = []
-    #     for gene, cluster in clusters:
-    #         _clusters.append("G"+str(cluster))
-    #     self.cluster_labels = _clusters
-    #     return _clusters
-
-    def cluster(self, threshold=0.5, lower_bound=1, upper_bound=10):
-        G = self.generate_network(threshold=threshold)
-        cliques = dict()
-        _clusters = []
-    #     for i, genes in enumerate(nx.connected_components(G)):
-    #         if len(genes) == 1:
-    #             clusters[list(genes)[0]] = "None"
-    #         else:
-    #             for gene in genes:
-    #                 clusters[gene] = "CC{}".format(i)
-        for i, genes in enumerate(nx.find_cliques(G)):
-            if len(genes) > 1:
-                cliques["Clique{}".format(i)] = genes
-        valid_cliques = collections.defaultdict(list)
-        for gene in self.context.expressed_genes:
-            max_clique_size = 1 #len(self.context.expressed_genes) + 1
-            max_clique = "None"
-            for cluster, genes in cliques.items():
-                if gene in genes and len(genes) > max_clique_size:
-                    max_clique = cluster
-                    max_clique_size = len(genes)
-            if max_clique_size == 1:
-                _clusters.append("None")
-            else:
-                _clusters.append(max_clique)
-                valid_cliques[max_clique] = cliques[max_clique]
-
-    #     a = pandas.DataFrame.from_dict(self.embeddings).to_numpy()
-    #     similarities = cosine_similarity(a.T)
-    #     print("Clustering")
-    #     kmeans = sklearn.cluster.DBSCAN(eps=10.0)
-    #     scaler = StandardScaler()
-    #     vector = scaler.fit_transform(similarities)
-    #     kmeans.fit(vector)
-    #     clusters = kmeans.labels_
-    #     clusters = zip(self.context.expressed_genes, clusters)
-    #     _clusters = []
-    #     for gene in self.context.expressed_genes:
-    #         _clusters.append(clusters[gene])
-        self.cluster_labels = _clusters
-        self.cluster_definitions = cliques
-        return cliques
+    def cluster(self, threshold=0.75, lower_bound=1):
+        cluster_definitions = collections.defaultdict(list)
+        G = embed.generate_network(threshold=threshold)
+        G.remove_edges_from(networkx.selfloop_edges(G))
+        for i, connected_component in enumerate(networkx.connected_components(G)):
+            subg = G.subgraph(connected_component)
+            if len(subg.nodes()) > lower_bound:
+                # if len(subg.nodes()) == 2:
+                #     cluster_definitions[str(i+j+100)] += list(subg.nodes())
+                #     continue
+                clique_tree = networkx.tree.junction_tree(subg)
+                clique_tree.remove_nodes_from(list(networkx.isolates(clique_tree)))
+                for j, cc in enumerate(nx.connected_components(clique_tree)):
+                    for clique_cc in cc:
+                        cluster_definitions[str(i+j)] += list(set(clique_cc))
+        self.cluster_definitions = cluster_definitions
+        return self.cluster_definitions
 
     def clusters(self, clusters):
         average_vector = dict()
@@ -181,19 +143,6 @@ class GeneEmbedding(object):
                 vector.append(vec)
         assert len(vector) != 0, genes
         return list(numpy.median(vector, axis=0))
-
-    # def cluster_definitions(self):
-    #     average_vector, gene_to_cluster = self.clusters(self.cluster_labels)
-    #     similarities = collections.defaultdict(dict)
-    #     for cluster, vector in average_vector.items():
-    #         distances = dict()
-    #         for target in gene_to_cluster[cluster]:
-    #             v = self.embeddings[target]
-    #             distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(v).reshape(1, -1))[0])
-    #             distances[target] = distance
-    #         sorted_distances = list(reversed(sorted(distances.items(), key=operator.itemgetter(1))))
-    #         similarities[cluster] = [x[0] for x in sorted_distances if x[0]]
-    #     return similarities
 
     def cluster_definitions_as_df(self, top_n=20):
         similarities = self.cluster_definitions
@@ -555,8 +504,6 @@ class CellEmbedding(object):
             for batch in batch_keys:
                 bvec = list(numpy.average(batches[batch], axis=0))
                 distance = float(cosine_similarity(numpy.array(bvec).reshape(1, -1),numpy.array(cluster_vec).reshape(1, -1))[0])
-    #             if max_distance > distance:
-    #                 max_distance = distance
                 offset = numpy.subtract(cluster_vec,bvec)
                 bvec = numpy.add(bvec,offset)
                 distance = float(cosine_similarity(numpy.array(bvec).reshape(1, -1),numpy.array(cluster_vec).reshape(1, -1))[0])
@@ -850,31 +797,36 @@ class CellEmbedding(object):
         self.context.adata.obs["cell_type"] = nu
         return {"distances":distribution, "order":celltypes, "probabilities":probabilities}
 
-    def get_adata(self):
+    def get_adata(self, min_dist=0.3, n_neighbors=50):
         adata = self.context.adata.copy()
+        adata = adata[list(self.data.keys())]
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         x_compass = []
         for x in adata.obs.index:
             x_compass.append(mapped_components[x])
         adata.obsm['X_compass'] = numpy.array(x_compass)
-        sc.pp.neighbors(adata, use_rep="X_compass", n_neighbors=50)
-        sc.tl.umap(adata, min_dist=0.3)
-        sc.tl.leiden(adata, key_added="leiden_compass", resolution=0.8)
-
-        # gene_cluster_vectors = dict()
-        # for gclust, genes in cluster_definitions.items():
-        #     vector = embed.generate_vector(genes)
-        #     gene_cluster_vectors[gclust] = vector
-        #
-        # for gclust, vector in gene_cluster_vectors.items():
-        #     vector = embed.generate_vector(isg_genes)
-        #     dists = []
-        #     for x in adata.obs.index:
-        #         distance = float(cosine_similarity(numpy.array(mapped_components[x]).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
-        #         dists.append(distance)
-        #     adata.obs[gclust] = dists
+        sc.pp.neighbors(adata, use_rep="X_compass", n_neighbors=n_neighbors)
+        sc.tl.umap(adata, min_dist=min_dist)
+        self.adata = adata
         return adata
 
+    def clique_family_distances(self):
+        from scipy.spatial import distance
+        adata = self.adata
+        mapped_components = dict(zip(list(cembed.data.keys()),cembed.matrix))
+        gene_cluster_vectors = dict()
+        for gclust, genes in cluster_definitions.items():
+            vector = embed.generate_vector(genes)
+            gene_cluster_vectors[gclust] = vector
+        for gclust, vector in gene_cluster_vectors.items():
+            print("Computed CF: ",gclust)
+            dists = []
+            for x in adata.obs.index:
+                dist = 1.0 - distance.cosine(mapped_components[x],vector)
+                dists.append(dist)
+            adata.obs[gclust] = dists
+        self.adata = adata
+        return adata
 
     def plot_clique(self,clique_genes,distance=0.5,threshold=-1.0, title=None):
         import matplotlib as mpl

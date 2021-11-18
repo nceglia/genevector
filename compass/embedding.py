@@ -771,7 +771,7 @@ class CellEmbedding(object):
         probs = dict()
         for pheno, markers in phenotype_markers.items():
             dists = []
-            vector = embed.generate_vector(markers)
+            vector = self.embed.generate_vector(markers)
             for x in tqdm.tqdm(adata.obs.index):
                 dist = 1.0 - distance.cosine(mapped_components[x],vector)
                 dists.append(dist)

@@ -455,33 +455,23 @@ class CellEmbedding(object):
         self.weights = collections.defaultdict(list)
         self.pcs = dict()
         embed_genes = list(embed.embeddings.keys())
+        self.matrix = []
 
         for cell, genes in tqdm.tqdm(cell_to_gene):
-            if len(genes) < 2: continue
-            if cell in self.expression:
-                cell_weights = self.expression[cell]
-                for gene in embed_genes:
-                    if gene in cell_weights:
-                        weight = self.expression[cell][gene]
-                        self.data[cell].append(embed.embeddings[gene])
-                        self.weights[cell].append(weight)
-
-        self.matrix = []
-        dataset_vector = []
-        scaler = StandardScaler()
-        for cell, vectors in tqdm.tqdm(list(self.data.items())):
-            weights = self.weights[cell]
+            cell_weights = self.expression[cell]
+            cell_genes = []
+            weights = []
+            for g,w in cell_weights.items():
+                cell_genes.append(g)
+                weights.append(w)
+            weights = numpy.array(weights)
+            scaler = MinMaxScaler()
             scaled_weights = scaler.fit_transform(numpy.array(weights).reshape(-1,1))
             scaled_weights = [x + 1.0 for x in list(scaled_weights.reshape(1,-1)[0])]
-            xvec = list(numpy.average(vectors, axis=0, weights=scaled_weights))
-            self.matrix.append(xvec)
-            dataset_vector += list(vectors)
-        self.dataset_vector = numpy.average(dataset_vector, axis=0)
-        _matrix = []
-        for vec in self.matrix:
-            _matrix.append(numpy.subtract(vec, self.dataset_vector))
-        self.matrix = _matrix
-
+            vectors = numpy.array([embed.embeddings[gene] for gene in cell_genes])
+            self.matrix.append(numpy.average(vectors,axis=0,weights=scaled_weights))
+            self.data[cell] = vectors
+        self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
 
     def batch_correct(self, column=None, resolution=1, atten=1.0):
         if not column:
@@ -764,38 +754,45 @@ class CellEmbedding(object):
         plt.tight_layout()
         plt.savefig(os.path.join(output_path,"celltype_similarities_{}.png".format(sample)))
 
-    def phenotype_probability(self, phenotype_markers, method="softmax"):
-        probs = dict()
-        for pheno, markers in phenotype_markers.items():
-            vec = self.embed.generate_vector(markers)
-            probs[pheno] = self.plot_distance(vec, method="UMAP",threshold=-1.0, show=False)
+def phenotype_probability(self, phenotype_markers, method="softmax"):
+    mapped_components = dict(zip(list(self.data.keys()),self.matrix))
+    adata = self.context.adata.copy()
+    adata = adata[list(self.data.keys())]
+    probs = dict()
+    for pheno, markers in phenotype_markers.items():
+        dists = []
+        vector = embed.generate_vector(markers)
+        for x in tqdm.tqdm(adata.obs.index):
+            dist = 1.0 - distance.cosine(mapped_components[x],vector)
+            dists.append(dist)
+        probs[pheno] = dists
+    distribution = []
+    celltypes = []
+    for k, v in probs.items():
+        distribution.append(v)
+        celltypes.append(k)
+    distribution = list(zip(*distribution))
+    classif = []
+    probabilities = []
+    if method=="normalized":
         scaler = MinMaxScaler()
-        distribution = []
-        celltypes = []
-        for k, v in probs.items():
-            distribution.append(v)
-            celltypes.append(k)
-        distribution = list(zip(*distribution))
         res = scaler.fit_transform(numpy.array(distribution))
-        classif = []
-        probabilities = []
-        if method=="normalized":
-            for ct in res:
-                ct = ct / ct.sum()
-                probabilities.append(ct)
-                assign = celltypes[numpy.argmax(ct)]
-                classif.append(assign)
-        if method=="softmax":
-            probabilities = softmax(distribution,axis=1)
-            for ct in probabilities:
-                assign = celltypes[numpy.argmax(ct)]
-                classif.append(assign)
-        umap_pts = dict(zip(list(self.data.keys()),classif))
-        nu = []
-        for bc in self.context.adata.obs.index.tolist():
-            nu.append(umap_pts[bc])
-        self.context.adata.obs["cell_type"] = nu
-        return {"distances":distribution, "order":celltypes, "probabilities":probabilities}
+        for ct in res:
+            ct = ct / ct.sum()
+            probabilities.append(ct)
+            assign = celltypes[numpy.argmax(ct)]
+            classif.append(assign)
+    if method=="softmax":
+        probabilities = softmax(distribution,axis=1)
+        for ct in probabilities:
+            assign = celltypes[numpy.argmax(ct)]
+            classif.append(assign)
+    umap_pts = dict(zip(list(self.data.keys()),classif))
+    nu = []
+    for bc in adata.obs.index.tolist():
+        nu.append(umap_pts[bc])
+    adata.obs["cell_type"] = nu
+    return {"distances":distribution, "order":celltypes, "probabilities":probabilities}
 
     def get_adata(self, min_dist=0.3, n_neighbors=50):
         adata = self.context.adata.copy()

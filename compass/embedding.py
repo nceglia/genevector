@@ -765,21 +765,28 @@ class CellEmbedding(object):
         plt.savefig(os.path.join(output_path,"celltype_similarities_{}.png".format(sample)))
 
     def phenotype_probability(self, phenotype_markers, method="softmax"):
+        mapped_components = dict(zip(list(self.data.keys()),self.matrix))
+        adata = self.context.adata.copy()
+        adata = adata[list(self.data.keys())]
         probs = dict()
         for pheno, markers in phenotype_markers.items():
-            vec = self.embed.generate_vector(markers)
-            probs[pheno] = self.plot_distance(vec, method="UMAP",threshold=-1.0, show=False)
-        scaler = MinMaxScaler()
+            dists = []
+            vector = embed.generate_vector(markers)
+            for x in tqdm.tqdm(adata.obs.index):
+                dist = 1.0 - distance.cosine(mapped_components[x],vector)
+                dists.append(dist)
+            probs[pheno] = dists
         distribution = []
         celltypes = []
         for k, v in probs.items():
             distribution.append(v)
             celltypes.append(k)
         distribution = list(zip(*distribution))
-        res = scaler.fit_transform(numpy.array(distribution))
         classif = []
         probabilities = []
         if method=="normalized":
+            scaler = MinMaxScaler()
+            res = scaler.fit_transform(numpy.array(distribution))
             for ct in res:
                 ct = ct / ct.sum()
                 probabilities.append(ct)
@@ -792,9 +799,9 @@ class CellEmbedding(object):
                 classif.append(assign)
         umap_pts = dict(zip(list(self.data.keys()),classif))
         nu = []
-        for bc in self.context.adata.obs.index.tolist():
+        for bc in adata.obs.index.tolist():
             nu.append(umap_pts[bc])
-        self.context.adata.obs["cell_type"] = nu
+        adata.obs["cell_type"] = nu
         return {"distances":distribution, "order":celltypes, "probabilities":probabilities}
 
     def get_adata(self, min_dist=0.3, n_neighbors=50):

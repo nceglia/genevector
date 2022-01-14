@@ -20,9 +20,12 @@ from sklearn.neighbors import KernelDensity
 import matplotlib.pyplot as plt
 from collections import Counter
 from scipy import stats
-import itertools    
+import itertools
 from sklearn.linear_model import LinearRegression
 import gc
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.feature_selection import f_regression, mutual_info_regression
 
 class Context(object):
 
@@ -105,12 +108,12 @@ class Context(object):
             self.expression = collections.defaultdict(dict)
             nonzero = find(normalized_matrix > 0)
             print("Loading Expression.")
-            
+
             nonindexed_expression = collections.defaultdict(dict)
             for cell, gene_i, val in tqdm.tqdm(list(zip(*nonzero))):
                 symbol = index_gene[gene_i]
                 nonindexed_expression[cell][symbol] = normalized_matrix[cell,gene_i]
-            
+
             print("Reindexing Cooc")
             for cell, genes in tqdm.tqdm(list(nonindexed_expression.items())):
                 barcode = cells[cell]
@@ -163,24 +166,42 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
+    def mutual_information(self):
+        from sklearn.metrics import mutual_info_score
+        res = collections.defaultdict(lambda : collections.defaultdict(float))
+        expression = dict()
+        for gene1 in tqdm.tqdm(self.adata.var.index):
+            for gene2 in self.adata.var.index:
+                if gene1 in expression:
+                    X = expression[gene1]
+                else:
+                    X = self.adata.X[:,self.adata.var.index.tolist().index(gene1)].astype(int)
+                    expression[gene1] = X
+                if gene2 in expression:
+                    y = expression[gene2]
+                else:
+                    y = self.adata.X[:,self.adata.var.index.tolist().index(gene2)].astype(int)
+                    expression[gene2] = y
+                mi = mutual_info_score(X, y)
+                res[gene1][gene2] = mi
+        return res
+
 class CompassDataset(Dataset):
 
-    def __init__(self, adata, features=[], expression=None, coocc=None, cov=None, device="cpu"):
-        self.data = Context.build(adata,expression=expression)
+    def __init__(self, adata, features=[], device="cpu"):
+        self.data = Context.build(adata)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene
         self._vocab_len = len(self._word2id)
         self.features = features
         self.device = device
-        self.create_coocurrence_matrix(coocc=coocc, cov=cov)
-        print("Vocabulary length: {}".format(self._vocab_len))
-        
+
+    def load_mi(self,mi_object):
+        self.mi_scores = mi_object
 
     def create_coocurrence_matrix(self, coocc=None, cov=None):
         print("Generating Correlation matrix.")
-        print("Generating Correlation matrix.")
         import pandas
-        # all_genes_exp = self.data.expressed_genes
 
         from sklearn import feature_extraction
         vectorizer = feature_extraction.DictVectorizer(sparse=True)
@@ -208,13 +229,20 @@ class CompassDataset(Dataset):
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
-
-        for gene, row in zip(all_genes, cov):
+        # mi_scores = self.data.mutual_information()
+        for gene, row in tqdm.tqdm(zip(all_genes, cov)):
             for cgene, value in zip(all_genes, row):
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
+                # try:
+                #     if self.mi_scores[gene][cgene] > 0.0:
+                #         self._xij.append(1.0 + self.mi_scores[gene][cgene] * 100.0)
+                #     else:
+                #         self._xij.append(1.0)
+                # except Exception as e:
+                #     self._xij.append(1.0)
                 if value > 0.0:
                     self._xij.append(float(value) * coocc[wi,ci] + 1.0)
                 else:
@@ -228,7 +256,6 @@ class CompassDataset(Dataset):
             self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
             self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
             self._xij = torch.FloatTensor(self._xij).to("cpu")
-
         self.coocc = coocc
         self.cov = cov
 

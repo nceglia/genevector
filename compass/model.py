@@ -66,13 +66,15 @@ class CompassModel(nn.Module):
 class CompassTrainer(object):
     def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, x_max=100, alpha=0.75, device="cpu"):
         self.dataset = dataset
+        self.dataset.create_coocurrence_matrix()
+
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension
         self.batch_size = batch_size
         self.initial_lr = initial_lr
         self.use_cuda = torch.cuda.is_available()
-        self.model = CompassModel(self.emb_size, self.emb_dimension) 
+        self.model = CompassModel(self.emb_size, self.emb_dimension)
         self.device = device
         if self.device == "cuda" and not self.use_cuda:
             raise ValueError("CUDA requested but no GPU available.")
@@ -97,7 +99,7 @@ class CompassTrainer(object):
                 self.optimizer.step()
                 loss_values.append(loss.item())
                 if batch_i % 100 == 0:
-                    print("Epoch: {}/{} \t Batch: {}/{} \t Loss: {}".format(e, epochs, batch_i, n_batches, np.mean(loss_values[-20:])))  
+                    print("Epoch: {}/{} \t Batch: {}/{} \t Loss: {}".format(e, epochs, batch_i, n_batches, np.mean(loss_values[-20:])))
         print("Saving model...")
         self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name, 0)
         self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name.replace(".vec","2.vec"), 1)

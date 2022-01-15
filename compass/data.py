@@ -166,20 +166,7 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
-    @staticmethod
-    def entropy(P, log_units = 2):
-        P = P[P>0]
-        return numpy.dot(P, -numpy.log(P))/numpy.log(log_units)
 
-    @staticmethod
-    def conditional_entropy(Y, X):
-        return scipy.stats.entropy(Y,X,base=2)
-
-    @staticmethod
-    def mutual_information(Y, X):
-        return entropy(Y) - conditional_entropy(Y,X)
-
-    def mutual_information(self):
 
 class CompassDataset(Dataset):
 
@@ -191,10 +178,40 @@ class CompassDataset(Dataset):
         self.features = features
         self.device = device
 
-    def load_mi(self,mi_object):
-        self.mi_scores = mi_object
+    @staticmethod
+    def entropy(P, log_units = 2):
+        P = P[P>0]
+        return numpy.dot(P, -numpy.log(P))/numpy.log(log_units)
 
-    def create_coocurrence_matrix(self, coocc=None, cov=None):
+    @staticmethod
+    def conditional_entropy(Y, X):
+        return scipy.stats.entropy(Y,X,base=2)
+
+    @staticmethod
+    def mutual_information(Y, X):
+        return CompassDataset.entropy(Y) - CompassDataset.conditional_entropy(Y,X)
+
+    def joint_probability(self):
+        df = pandas.DataFrame.from_dict(self.data.expression)
+        self.jdf = df.fillna(0)
+
+    def calculate_mi(self, gene1,gene2):
+        e = self.jdf.loc[self.jdf.index.isin([gene1, gene2])].to_numpy()
+        e = e[:,e.min(axis=0)>0]
+        e = e/e.sum(axis=0)
+        return CompassDataset.mutual_information(e[0],e[1])
+
+    def generate_mi_scores(self):
+        self.joint_probability()
+        genes = self.jdf.index.tolist()
+        self.mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
+        for _ in tqdm.tqdm(range(len(genes))):
+            gene = genes.pop(0)
+            for other in genes:
+                self.mi_scores[gene][other] = compute_mi(gene, other)
+                self.mi_scores[other][gene] = self.mi_scores[gene][other]
+
+    def create_inputs_outputs(self, coocc=None, cov=None):
         print("Generating Correlation matrix.")
         import pandas
 
@@ -211,38 +228,26 @@ class CompassDataset(Dataset):
         self.data.id2gene = index_gene
         self.data.expressed_genes = all_genes
 
-        corr_matrix = pandas.DataFrame(data=corr_matrix.todense(),columns=all_genes)
-        corr_matrix = corr_matrix[all_genes]
-        corr_df = corr_matrix
-
-        print("Decomposing")
-        coocc = numpy.array(corr_df.T.dot(corr_df))
-
-        corr_matrix = numpy.transpose(corr_matrix.to_numpy())
-        cov = numpy.corrcoef(corr_matrix)
+        print("Computing Mutual Information...")
 
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
         mi_scores = self.data.mutual_information()
-        for gene, row in tqdm.tqdm(zip(all_genes, cov)):
-            for cgene, value in zip(all_genes, row):
+        for gene in tqdm.tqdm(all_genes):
+            for cgene in all_genes:
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                # try:
-                #     if self.mi_scores[gene][cgene] > 0.0:
-                #         self._xij.append(1.0 + self.mi_scores[gene][cgene] * 100.0)
-                #     else:
-                #         self._xij.append(1.0)
-                # except Exception as e:
-                #     self._xij.append(1.0)
-                if value > 0.0:
-                    self._xij.append(float(value) * coocc[wi,ci] + 1.0)
-                else:
+                try:
+                    if self.mi_scores[gene][cgene] > 0.0:
+                        self._xij.append(1.0 + self.mi_scores[gene][cgene])
+                    else:
+                        self._xij.append(1.0)
+                except Exception as e:
                     self._xij.append(1.0)
-
+        print("Complete.")
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()
@@ -251,9 +256,6 @@ class CompassDataset(Dataset):
             self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
             self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
             self._xij = torch.FloatTensor(self._xij).to("cpu")
-        self.coocc = coocc
-        self.cov = cov
-
 
     def get_batches(self, batch_size):
         if self.device == "cuda":

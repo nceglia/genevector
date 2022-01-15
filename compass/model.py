@@ -66,7 +66,7 @@ class CompassModel(nn.Module):
 class CompassTrainer(object):
     def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, x_max=100, alpha=0.75, device="cpu"):
         self.dataset = dataset
-        self.dataset.create_coocurrence_matrix()
+        self.dataset.create_inputs_outputs()
 
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)

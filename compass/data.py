@@ -214,7 +214,8 @@ class CompassDataset(Dataset):
     def create_inputs_outputs(self, coocc=None, cov=None):
         print("Loading Genes and Expression.")
         import pandas
-
+        from sklearn import feature_extraction
+        vectorizer = feature_extraction.DictVectorizer(sparse=True)
         all_genes = vectorizer.feature_names_
         gene_index = {w: idx for (idx, w) in enumerate(all_genes)}
         index_gene = {idx: w for (idx, w) in enumerate(all_genes)}

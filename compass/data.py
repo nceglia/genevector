@@ -210,7 +210,7 @@ class CompassDataset(Dataset):
         for _ in tqdm.tqdm(range(len(genes))):
             gene = genes.pop(0)
             for other in genes:
-                self.mi_scores[gene][other] = compute_mi(gene, other)
+                self.mi_scores[gene][other] = self.calculate_mi(gene, other)
                 self.mi_scores[other][gene] = self.mi_scores[gene][other]
 
     def create_inputs_outputs(self, coocc=None, cov=None):

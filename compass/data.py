@@ -191,7 +191,7 @@ class CompassDataset(Dataset):
 
     @staticmethod
     def mutual_information(Y, X):
-        return CompassDataset.entropy(Y) - CompassDataset.conditional_entropy(Y,X)
+        return scipy.stats.entropy(Y,base=2) - CompassDataset.conditional_entropy(Y,X)
 
     def joint_probability(self):
         df = pandas.DataFrame.from_dict(self.data.expression)
@@ -237,17 +237,18 @@ class CompassDataset(Dataset):
         print("Creating Training Data.")
         for gene in tqdm.tqdm(all_genes):
             for cgene in all_genes:
-                wi = self.data.gene2id[gene]
-                ci = self.data.gene2id[cgene]
-                self._i_idx.append(wi)
-                self._j_idx.append(ci)
-                try:
-                    if self.mi_scores[gene][cgene] > 0.0:
-                        self._xij.append(1.0 + self.mi_scores[gene][cgene])
-                    else:
+                if gene != c_gene:
+                    wi = self.data.gene2id[gene]
+                    ci = self.data.gene2id[cgene]
+                    self._i_idx.append(wi)
+                    self._j_idx.append(ci)
+                    try:
+                        if self.mi_scores[gene][cgene] > 0.0:
+                            self._xij.append(1.0 + self.mi_scores[gene][cgene])
+                        else:
+                            self._xij.append(1.0)
+                    except Exception as e:
                         self._xij.append(1.0)
-                except Exception as e:
-                    self._xij.append(1.0)
         print("Complete.")
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()

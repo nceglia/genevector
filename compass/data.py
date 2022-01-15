@@ -180,28 +180,16 @@ class CompassDataset(Dataset):
         self.features = features
         self.device = device
 
-    @staticmethod
-    def entropy(P, log_units = 2):
-        P = P[P>0]
-        return numpy.dot(P, -numpy.log(P))/numpy.log(log_units)
-
-    @staticmethod
-    def conditional_entropy(Y, X):
-        return scipy.stats.entropy(Y,X,base=2)
-
-    @staticmethod
-    def mutual_information(Y, X):
-        return scipy.stats.entropy(Y,base=2) - CompassDataset.conditional_entropy(Y,X)
-
     def joint_probability(self):
         df = pandas.DataFrame.from_dict(self.data.expression)
         self.jdf = df.fillna(0)
 
-    def calculate_mi(self, gene1,gene2):
-        e = self.jdf.loc[self.jdf.index.isin([gene1, gene2])].to_numpy()
+    def calculate_mi(self, gene1,gene2,base=2):
+        e1 = self.jdf.loc[gene1]
+        e2 = self.jdf.loc[gene2]
+        e = numpy.array([e1,e2])
         e = e[:,e.min(axis=0)>0]
-        e = e/e.sum(axis=0)
-        return CompassDataset.mutual_information(e[0],e[1])
+        return scipy.stats.entropy(e[0],base=base) - scipy.stats.entropy(e[0],e[1],base=base)
 
     def generate_mi_scores(self):
         self.joint_probability()
@@ -237,18 +225,17 @@ class CompassDataset(Dataset):
         print("Creating Training Data.")
         for gene in tqdm.tqdm(all_genes):
             for cgene in all_genes:
-                if gene != cgene:
-                    wi = self.data.gene2id[gene]
-                    ci = self.data.gene2id[cgene]
-                    self._i_idx.append(wi)
-                    self._j_idx.append(ci)
-                    try:
-                        if self.mi_scores[gene][cgene] > 0.0:
-                            self._xij.append(1.0 + self.mi_scores[gene][cgene])
-                        else:
-                            self._xij.append(1.0)
-                    except Exception as e:
+                wi = self.data.gene2id[gene]
+                ci = self.data.gene2id[cgene]
+                self._i_idx.append(wi)
+                self._j_idx.append(ci)
+                try:
+                    if self.mi_scores[gene][cgene] > 0.0:
+                        self._xij.append(1.0 + self.mi_scores[gene][cgene])
+                    else:
                         self._xij.append(1.0)
+                except Exception as e:
+                    self._xij.append(1.0)
         print("Complete.")
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()

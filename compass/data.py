@@ -237,7 +237,7 @@ class CompassDataset(Dataset):
         print("Creating Training Data.")
         for gene in tqdm.tqdm(all_genes):
             for cgene in all_genes:
-                if gene != c_gene:
+                if gene != cgene:
                     wi = self.data.gene2id[gene]
                     ci = self.data.gene2id[cgene]
                     self._i_idx.append(wi)

@@ -25,7 +25,7 @@ from sklearn.linear_model import LinearRegression
 import gc
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.feature_selection import f_regression, mutual_info_regression
+import scipy
 
 class Context(object):
 
@@ -166,25 +166,20 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
+    @staticmethod
+    def entropy(P, log_units = 2):
+        P = P[P>0]
+        return numpy.dot(P, -numpy.log(P))/numpy.log(log_units)
+
+    @staticmethod
+    def conditional_entropy(Y, X):
+        return scipy.stats.entropy(Y,X,base=2)
+
+    @staticmethod
+    def mutual_information(Y, X):
+        return entropy(Y) - conditional_entropy(Y,X)
+
     def mutual_information(self):
-        from sklearn.metrics import mutual_info_score
-        res = collections.defaultdict(lambda : collections.defaultdict(float))
-        expression = dict()
-        for gene1 in tqdm.tqdm(self.adata.var.index):
-            for gene2 in self.adata.var.index:
-                if gene1 in expression:
-                    X = expression[gene1]
-                else:
-                    X = self.adata.X[:,self.adata.var.index.tolist().index(gene1)].astype(int)
-                    expression[gene1] = X
-                if gene2 in expression:
-                    y = expression[gene2]
-                else:
-                    y = self.adata.X[:,self.adata.var.index.tolist().index(gene2)].astype(int)
-                    expression[gene2] = y
-                mi = mutual_info_score(X, y)
-                res[gene1][gene2] = mi
-        return res
 
 class CompassDataset(Dataset):
 
@@ -229,7 +224,7 @@ class CompassDataset(Dataset):
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
-        # mi_scores = self.data.mutual_information()
+        mi_scores = self.data.mutual_information()
         for gene, row in tqdm.tqdm(zip(all_genes, cov)):
             for cgene, value in zip(all_genes, row):
                 wi = self.data.gene2id[gene]

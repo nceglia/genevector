@@ -473,11 +473,18 @@ class CellEmbedding(object):
             self.data[cell] = vectors
         self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
 
+    def cluster_vals(self, k=1):
+        _clusters = []
+        for cluster in self.matrix:
+            _clusters.append("C1")
+        self.clusters = _clusters
+        return _clusters
+
     def batch_correct(self, column=None, resolution=1, atten=1.0):
         if not column:
             raise ValueError("Must supply batch label to correct.")
-        self.cluster(k=resolution)
-        column_labels = dict(zip(self.context.cells,self.context.metadata[column]))
+        self.cluster_vals(self, k=resolution)
+        column_labels = dict(zip(self.context.cells, self.context.metadata[column]))
         labels = []
         for key in self.data.keys():
             labels.append(column_labels[key])

@@ -26,6 +26,8 @@ import gc
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy
+import pandas
+from sklearn import feature_extraction
 
 class Context(object):
 
@@ -213,8 +215,7 @@ class CompassDataset(Dataset):
 
     def create_inputs_outputs(self, coocc=None, cov=None):
         print("Loading Genes and Expression.")
-        import pandas
-        from sklearn import feature_extraction
+
         vectorizer = feature_extraction.DictVectorizer(sparse=True)
         _ = vectorizer.fit_transform(list(self.data.expression.values()))
 

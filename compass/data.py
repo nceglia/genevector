@@ -216,6 +216,8 @@ class CompassDataset(Dataset):
         import pandas
         from sklearn import feature_extraction
         vectorizer = feature_extraction.DictVectorizer(sparse=True)
+        _ = vectorizer.fit_transform(list(self.data.expression.values()))
+
         all_genes = vectorizer.feature_names_
         gene_index = {w: idx for (idx, w) in enumerate(all_genes)}
         index_gene = {idx: w for (idx, w) in enumerate(all_genes)}

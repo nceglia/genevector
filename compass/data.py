@@ -182,7 +182,8 @@ class CompassDataset(Dataset):
 
     def joint_probability(self):
         df = pandas.DataFrame.from_dict(self.data.expression)
-        self.jdf = df.fillna(0)
+        df = df.fillna(0)
+        self.jdf = df / df.sum()
 
     def calculate_mi(self, gene1,gene2,base=2):
         e1 = self.jdf.loc[gene1]

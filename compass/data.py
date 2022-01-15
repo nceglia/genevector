@@ -212,16 +212,10 @@ class CompassDataset(Dataset):
                 self.mi_scores[other][gene] = self.mi_scores[gene][other]
 
     def create_inputs_outputs(self, coocc=None, cov=None):
-        print("Generating Correlation matrix.")
+        print("Loading Genes and Expression.")
         import pandas
 
-        from sklearn import feature_extraction
-        vectorizer = feature_extraction.DictVectorizer(sparse=True)
-        corr_matrix = vectorizer.fit_transform(list(self.data.expression.values()))
-        corr_matrix[corr_matrix != 0] = 1
-
         all_genes = vectorizer.feature_names_
-
         gene_index = {w: idx for (idx, w) in enumerate(all_genes)}
         index_gene = {idx: w for (idx, w) in enumerate(all_genes)}
         self.data.gene2id = gene_index
@@ -229,11 +223,14 @@ class CompassDataset(Dataset):
         self.data.expressed_genes = all_genes
 
         print("Computing Mutual Information...")
+        self.generate_mi_scores()
+        print("Complete.")
 
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
-        mi_scores = self.data.mutual_information()
+
+        print("Creating Training Data.")
         for gene in tqdm.tqdm(all_genes):
             for cgene in all_genes:
                 wi = self.data.gene2id[gene]

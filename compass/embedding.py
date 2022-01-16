@@ -2,6 +2,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.manifold import TSNE
 from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.cluster import AgglomerativeClustering
+from sklearn import metrics
+import seaborn as sns
 from sklearn.preprocessing import MaxAbsScaler
 from scipy.special import softmax
 import matplotlib.pyplot as plt
@@ -48,9 +51,46 @@ class GeneEmbedding(object):
         self.vector = []
         self.genes = []
         for gene in tqdm.tqdm(self.embeddings.keys()):
-            # if gene in self.embeddings:
             self.vector.append(self.embeddings[gene])
             self.genes.append(gene)
+
+    def select_cosine_threshold(self,plot=None):
+        gene_sets = set()
+        cosine = []
+        sill = []
+        cosine_max = 0.0
+        max_score = 0.0
+        for i in numpy.linspace(0.0,1,100):
+            clustering = AgglomerativeClustering(affinity="cosine",
+                                                 linkage="complete",
+                                                 distance_threshold=i,
+                                                 n_clusters=None).fit(self.vector)
+            clusters = collections.defaultdict(list)
+            if len(set(clustering.labels_)) > 1 and len(set(clustering.labels_)) != len(clustering.labels_):
+                score = metrics.silhouette_score(self.vector, clustering.labels_, metric='cosine')
+                sill.append(score)
+                cosine.append(i)
+                if score > max_score:
+                    cosine_max = i
+                    max_score = score
+        self.cosine_threshold = cosine_max
+
+        if plot:
+            sns.set(font_scale=0.6)
+            params = {'legend.fontsize': 'small',
+                      'axes.labelsize': 'small',
+                      'axes.titlesize':'small'}
+            fig, ax = plt.subplots(1,1,figsize=(5,1))
+            sns.lineplot(x=cosine,y=sill,color="g",ax=ax)
+            plt.vlines(cosine_max,ymin=0,ymax=max(sill)+0.05,color="blue")
+            ax.set_title("PBMC")
+            ax.set_xlim(0,1)
+            ax.set_ylim(0,max(sill)+0.05)
+            ax.set_ylabel("Silhouette Coefficient")
+            ax.set_xlabel("Cosine Similarity Threshold")
+            plt.tight_layout()
+            plt.savefig(plot)
+        return cosine_max
 
     def read_embedding(self, filename):
         embedding = dict()
@@ -60,6 +100,64 @@ class GeneEmbedding(object):
             gene = vector.pop(0)
             embedding[gene] = [float(x) for x in vector]
         return embedding
+
+    def plot_metagenes_scores(self, adata, metagenes, column, plot=None):
+        similarity_matrix = []
+        plt.figure(figsize = (5, 13))
+        barcode_to_label = dict(zip(adata.obs.index, adata.obs[column]))
+        matrix = []
+        meta_genes = []
+        cfnum = 1
+        cfams = dict()
+        for cluster, vector in metagenes.items():
+            row = []
+            cts = []
+            for ct in set(adata.obs[column]):
+                sub = adata[adata.obs[column]==ct]
+                val = numpy.mean(sub.obs[str(cluster)+"_SCORE"].tolist())
+                row.append(val)
+                cts.append(ct)
+            matrix.append(row)
+            label = str(cluster)+"_SCORE: " + ", ".join(vector[:10])
+            if len(set(vector)) > 10:
+                label += "*"
+            meta_genes.append(label)
+            cfams[cluster] = label
+            cfnum+=1
+        matrix = numpy.array(matrix)
+        df = pandas.DataFrame(matrix,index=meta_genes,columns=cts)
+        plt.figure()
+        sns.set(font_scale=0.3)
+        sns.clustermap(df,figsize=(5,9), dendrogram_ratio=0.1,cmap="mako",yticklabels=True, standard_scale=0)
+        plt.tight_layout()
+        if plot:
+            plt.savefig(plot)
+
+    def score_metagenes(self,adata ,metagenes):
+        for p, genes in metagenes.items():
+            sc.tl.score_genes(adata,score_name=str(p)+"_SCORE",gene_list=genes)
+            scores = numpy.array(adata.obs[str(p)+"_SCORE"].tolist()).reshape(-1,1)
+            scaler = MinMaxScaler()
+            scores = scaler.fit_transform(scores)
+            scores = list(scores.reshape(1,-1))[0]
+            adata.obs[str(p)+"_SCORE"] = scores
+
+    def identify_metagenes(self, cosine=None, upper_bound=40):
+        if cosine == None:
+            cosine = self.select_cosine_threshold()
+        clustering = AgglomerativeClustering(affinity="cosine",
+                                             linkage="complete",
+                                             distance_threshold=cosine,
+                                             n_clusters=None).fit(self.vector)
+        clusters = collections.defaultdict(list)
+        for l,g in zip(clustering.labels_,self.genes):
+            clusters[l].append(g)
+        markers = dict()
+        for cluster, genes in clusters.items():
+            if len(set(genes)) > 2 and len(set(genes)) < upper_bound:
+                markers["MG_{}".format(cluster)] = list(set(genes))
+        self.cluster_definitions = markers
+        return markers
 
     def compute_similarities(self, gene, subset=None, feature_type=None):
         if gene not in self.embeddings:
@@ -86,39 +184,6 @@ class GeneEmbedding(object):
         distance = [x[1] for x in sorted_distances]
         df = pandas.DataFrame.from_dict({"Gene":genes, "Similarity":distance})
         return df
-
-    def get_similar_genes(self, vector):
-        distances = dict()
-        targets = list(self.embeddings.keys())
-        for target in targets:
-            if target not in self.embeddings:
-                continue
-            v = self.embeddings[target]
-            distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(v).reshape(1, -1))[0])
-            distances[target] = distance
-        sorted_distances = list(reversed(sorted(distances.items(), key=operator.itemgetter(1))))
-        genes = [x[0] for x in sorted_distances]
-        distance = [x[1] for x in sorted_distances]
-        df = pandas.DataFrame.from_dict({"Gene":genes, "Similarity":distance})
-        return df
-
-    def cluster(self, threshold=0.75, lower_bound=1):
-        cluster_definitions = collections.defaultdict(list)
-        G = embed.generate_network(threshold=threshold)
-        G.remove_edges_from(networkx.selfloop_edges(G))
-        for i, connected_component in enumerate(networkx.connected_components(G)):
-            subg = G.subgraph(connected_component)
-            if len(subg.nodes()) > lower_bound:
-                # if len(subg.nodes()) == 2:
-                #     cluster_definitions[str(i+j+100)] += list(subg.nodes())
-                #     continue
-                clique_tree = networkx.tree.junction_tree(subg)
-                clique_tree.remove_nodes_from(list(networkx.isolates(clique_tree)))
-                for j, cc in enumerate(nx.connected_components(clique_tree)):
-                    for clique_cc in cc:
-                        cluster_definitions[str(i+j)] += list(set(clique_cc))
-        self.cluster_definitions = cluster_definitions
-        return self.cluster_definitions
 
     def clusters(self, clusters):
         average_vector = dict()
@@ -158,10 +223,6 @@ class GeneEmbedding(object):
         plt.figure(figsize = (8, 8))
         ax = plt.subplot(1,1,1)
         pcs = self.plot_reduction(self.cluster_labels, ax, labels=labels, method=method, pcs=pcs, remove=remove)
-        # if png:
-        #     plt.savefig(png)
-        #     plt.close()
-        # else:
         plt.show()
         return pcs
 
@@ -217,140 +278,6 @@ class GeneEmbedding(object):
                     ax.text(x+.02, y, str(gene), fontsize=8)
         return pcs
 
-    def subtract_vector(self, vector):
-        for gene, vec in self.embeddings.items():
-            vec = numpy.subtract(vec-vector)
-            self.embeddings[gene] = vec
-
-    def relabel_clusters(self, clusters, annotations):
-        _clusters = []
-        for cluster in clusters:
-            if cluster in annotations:
-                _clusters.append(annotations[cluster])
-            else:
-                _clusters.append(cluster)
-        self.cluster_labels = _clusters
-        return _clusters
-
-    def plot_similarity_matrix(self, top_n=5, png=None):
-        markers, marker_labels = self.marker_labels(top_n=top_n)
-        cmap = matplotlib.cm.tab20
-        node_color = {}
-        type_color = {}
-        ctypes = []
-        for marker in markers:
-            if marker_labels:
-                ctypes = []
-                for value in marker_labels.values():
-                    ctypes.append(value)
-                ctypes = list(set(ctypes))
-                node_color[marker] = cmap(ctypes.index(marker_labels[marker]))
-                type_color[marker_labels[marker]] = cmap(ctypes.index(marker_labels[marker]))
-        mm = pandas.DataFrame(markers, index=markers)
-        mm["Gene Cluster"] = mm[0]
-        row_colors = mm["Gene Cluster"].map(node_color)
-        similarity_matrix = []
-        markers = set(list(self.embeddings.keys())).intersection(set(markers))
-        markers = list(markers)
-        for marker in markers:
-            row = []
-            res = self.compute_similarities(marker, subset=markers)
-            resdict = dict(zip(res["Gene"],res["Similarity"]))
-            for gene in markers:
-                row.append(resdict[gene])
-            similarity_matrix.append(row)
-        from matplotlib.patches import Patch
-        plt.figure()
-        matrix = numpy.array(similarity_matrix)
-        df = pandas.DataFrame(matrix,index=markers,columns=markers)
-        sns.clustermap(df,cbar_pos=None,figsize=(12,12), dendrogram_ratio=0.1, cmap="mako",row_colors=row_colors,yticklabels=True,xticklabels=True)
-        handles = [Patch(facecolor=type_color[name]) for name in type_color]
-        plt.legend(handles, type_color, title='Gene Cluster',
-                bbox_to_anchor=(1, 1), bbox_transform=plt.gcf().transFigure, loc='upper right')
-        plt.tight_layout()
-        if png:
-            plt.savefig("marker_similarity.png")
-        else:
-            plt.show()
-
-    def similarity_network(self,top_n=5):
-        markers, marker_labels = self.marker_labels(top_n=top_n)
-        G = nx.Graph()
-        for marker in markers:
-            G.add_node(marker)
-        for marker in markers:
-            res = self.compute_similarities(marker)
-            resdict = dict(zip(res["Gene"],res["Similarity"]))
-            for gene, similarity in resdict.items():
-                if gene != marker:
-                    if gene not in G.nodes():
-                        G.add_node(gene)
-                    G.add_edge(marker, gene, weight=similarity)
-        return G
-
-
-    def plot_similarity_network(self, top_n=5, png=None):
-        markers, marker_labels = self.marker_labels(top_n=top_n)
-        cmap = matplotlib.cm.tab20
-        G = nx.petersen_graph()
-        node_color = []
-        node_order = []
-        node_size = []
-        edge_order = []
-        edge_color = []
-        edge_labels = dict()
-        for marker in markers:
-            node_order.append(marker)
-            if marker_labels:
-                ctypes = []
-                for value in marker_labels.values():
-                    ctypes.append(value)
-                ctypes = list(set(ctypes))
-                node_color.append(ctypes.index(marker_labels[marker]))
-            node_size.append(400)
-            G.add_node(marker)
-        for marker in markers:
-            res = self.compute_similarities(marker)
-            resdict = dict(zip(res["Gene"],res["Similarity"]))
-            i = 0
-            for gene, similarity in resdict.items():
-                if i > 9: break
-                if gene != marker:
-                    if gene not in G.nodes():
-                        node_size.append(0)
-                        G.add_node(gene)
-                        node_order.append(gene)
-                        node_color.append(len(set(marker_labels.values())))
-                    G.add_edge(marker, gene, weight=similarity)
-                    edge_color.append(similarity)
-                    edge_order.append((marker,gene))
-                    edge_labels[(marker,gene)] = str(round(similarity,2))
-                    i += 1
-        # print(node_color)
-        # c = max(nx.connected_components(G), key=len)
-        # G = G.subgraph(c).copy()
-        for i in range(10):
-            G.remove_node(i)
-        fig = plt.figure(figsize=(8,8))
-        ax = plt.subplot(1,1,1)
-        pos = nx.nx_agraph.graphviz_layout(G, prog="neato",args="-Goverlap=scale -Elen=5 -Eweight=0.2")
-        nx.draw(G,pos,ax=ax, cmap=cmap,nodelist=node_order,
-                             node_size=node_size,
-                             edgelist=edge_order,
-                             node_color=node_color,
-                             edge_color=edge_color,
-                             edge_vmin=0,
-                             edge_vmax=1.0,
-                             edge_cmap=plt.cm.Greys,
-                             with_labels=True, width=1,font_size=7)
-        nx.draw_networkx_edge_labels(G,pos,edge_labels=edge_labels, font_size=6)
-        plt.axis('off')
-        plt.tight_layout()
-        if png:
-            plt.savefig(png)
-        else:
-            plt.show()
-        return G
 
     @staticmethod
     def read_vector(vec):
@@ -362,42 +289,6 @@ class GeneEmbedding(object):
             gene = line.pop(0)
             vecs[gene] = list(map(float,line))
         return vecs, dims
-
-    @staticmethod
-    def cluster_network(genes, nxg, threshold=0.0, title="", display=True):
-        G = nxg.subgraph(genes)
-        for subg in nx.connected_components(G):
-            if len(subg) > 1:
-                if display:
-                    fig = plt.figure(figsize=(14,6))
-                    ax = plt.subplot(1,2,1)
-                    subG = G.subgraph(list(subg))
-                    centrality = dict(nx.betweenness_centrality(subG))
-                    low, *_, high = sorted(centrality.values())
-                    norm = mpl.colors.Normalize(vmin=low, vmax=high, clip=True)
-                    mapper = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.coolwarm)
-                    pos = nx.nx_agraph.graphviz_layout(subG, prog="neato",args="-Goverlap=scale -Elen=5 -Eweight=0.2")
-                    nx.draw(subG,pos,with_labels=True,
-                            node_color=[mapper.to_rgba(i) for i in centrality.values()],
-                            node_size=100,ax=ax,font_size=16,
-                            edge_color=[[0.5,0.5,0.5,0.5] for _ in subG.edges()])
-                    vector = embed.generate_vector(list(subg))
-                    ax = plt.subplot(1,2,2)
-                    pcs = self.pcs["UMAP"]
-                    distances = []
-                    dataset_distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(self.dataset_vector).reshape(1, -1))[0])
-                    for cell_vector in self.matrix:
-                        distance = float(cosine_similarity(numpy.array(cell_vector).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
-                        d = distance-dataset_distance
-                        if d < threshold:
-                            d = threshold
-                        distances.append(d)
-                    data = {"x":pcs[0],"y":pcs[1],"Distance": distances}
-                    df = pandas.DataFrame.from_dict(data)
-                    sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7)
-                    if title != None:
-                        plt.title(title)
-                    plt.show()
 
     def get_similar_genes(self, vector):
         distances = dict()
@@ -473,17 +364,13 @@ class CellEmbedding(object):
             self.data[cell] = vectors
         self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
 
-    def cluster_vals(self, k=1):
+    def batch_correct(self, column=None, resolution=1, atten=1.0):
+        if not column:
+            raise ValueError("Must supply batch label to correct.")
         _clusters = []
         for cluster in self.matrix:
             _clusters.append("C1")
         self.clusters = _clusters
-        return _clusters
-
-    def batch_correct(self, column=None, resolution=1, atten=1.0):
-        if not column:
-            raise ValueError("Must supply batch label to correct.")
-        self.cluster_vals(self, k=resolution)
         column_labels = dict(zip(self.context.cells, self.context.metadata[column]))
         labels = []
         for key in self.data.keys():
@@ -531,21 +418,6 @@ class CellEmbedding(object):
             _clusters.append("C"+str(cluster))
         self.clusters = _clusters
         return _clusters
-
-    def annotate_clusters(self, annotations):
-        _clusters = []
-        for cluster in self.clusters:
-            if cluster in annotations:
-                _clusters.append(annotations[cluster])
-            else:
-                _clusters.append(cluster)
-        self.clusters = _clusters
-
-    def subtract_vector(self, vector):
-        corrected_matrix = []
-        for cell_vector in self.matrix:
-            corrected_matrix.append(numpy.subtract(cell_vector, vector))
-        self.matrix = corrected_matrix
 
     def cluster_definitions(self):
         gene_similarities = dict()
@@ -671,96 +543,6 @@ class CellEmbedding(object):
                 plt.title(title)
         return distances
 
-    def plot_distance_grid(self, vectors, labels, pcs=None, threshold=-1.0, method="UMAP"):
-        plt.figure(figsize = (8,8))
-        if type(pcs) != numpy.ndarray:
-            if method not in self.pcs:
-                if method == "TSNE":
-                    pca = TSNE(n_components=2)
-                    pcs = pca.fit_transform(self.matrix)
-                    pcs = numpy.transpose(pcs)
-                else:
-                    trans = umap.UMAP(random_state=42,metric='cosine').fit(self.matrix)
-                    x = trans.embedding_[:, 0]
-                    y = trans.embedding_[:, 1]
-                    pcs = [x,y]
-            else:
-                pcs = self.pcs[method]
-        i = 0
-        num_plots = len(vectors)
-        import math
-        square = int(math.ceil(math.sqrt(num_plots)))
-        for vector, label in zip(vectors, labels):
-            ax = plt.subplot(square,square,i+1)
-            distances = []
-            dataset_distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(self.dataset_vector).reshape(1, -1))[0])
-            for cell_vector in self.matrix:
-                distance = float(cosine_similarity(numpy.array(cell_vector).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
-                d = distance-dataset_distance
-                if d < threshold:
-                    d = -1.0
-                distances.append(d)
-            data = {"x":pcs[0],"y":pcs[1],"Distance": distances}
-            df = pandas.DataFrame.from_dict(data)
-            sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7)
-            ax.set_title(label)
-            ax.set_xlabel("")
-            ax.set_ylabel("")
-            ax.get_legend().remove()
-            i += 1
-        plt.tight_layout()
-        plt.show()
-
-    def plot_gene_tsne(self, title, ax, genes, pcs=None):
-        expression = [0 for _ in range(len(list(self.data.keys())))]
-        for gene in genes:
-            for i, cell in enumerate(self.data.keys()):
-                if gene in self.expression[cell]:
-                    expression[i] += self.expression[cell][gene]
-        if type(pcs) != numpy.ndarray:
-            pca = TSNE(n_components=2)
-            pcs = pca.fit_transform(self.matrix)
-            pcs = numpy.transpose(pcs)
-        data = {"x":pcs[0],"y":pcs[1],"Gene Expression": expression}
-        df = pandas.DataFrame.from_dict(data)
-        sns.scatterplot(data=df,x="x", y="y", hue='Gene Expression', ax=ax,linewidth=0.00,s=7,alpha=0.7)
-        ax.set_title(title,fontsize=16)
-        return pcs
-
-    def plot_gene_expression(self, genes, pcs=None, png=None):
-        plt.figure(figsize = (8,8))
-        ax = plt.subplot(1,1, 1)
-        pcs = self.plot_gene_tsne(",".join(genes[:10]), ax, genes, pcs=pcs)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        if not png:
-            plt.show()
-        else:
-            plt.savefig(png)
-            plt.close()
-        return pcs
-
-    def plot_similarity_matrix(self, vectors, column):
-        similarity_matrix = []
-        plt.figure(figsize = (12, 10))
-        barcode_to_label = dict(zip(self.context.metadata.index, self.context.metadata[column]))
-        ctypes = self._cell_vectors()
-        matrix = []
-        clusters = list(vectors.keys())
-        celltypes = list(cytpes.keys())
-        for cluster, genes in vectors.items():
-            vector = embed.generate_vector(genes)
-            row = []
-            for cell in ctypes.keys():
-                distance = float(cosine_similarity(numpy.array(ctypes[cell]).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
-                row.append()
-            matrix.append(row)
-        matrix = numpy.array(matrix)
-        df = pandas.DataFrame(matrix,index=celltypes,columns=celltypes)
-        sns.clustermap(df,figsize=(17,8))
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_path,"celltype_similarities_{}.png".format(sample)))
-
     def phenotype_probability(self, phenotype_markers, method="softmax"):
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         adata = self.context.adata.copy()
@@ -768,7 +550,13 @@ class CellEmbedding(object):
         probs = dict()
         for pheno, markers in phenotype_markers.items():
             dists = []
-            vector = self.embed.generate_vector(markers)
+            vector = embed.generate_vector(markers)
+            ovecs = []
+            for oph, ovec in phenotype_markers.items():
+                ovec = embed.generate_vector(ovec)
+                ovecs.append(ovec)
+            aovec = numpy.average(ovecs,axis=0)
+            vector = numpy.subtract(vector,aovec)
             for x in tqdm.tqdm(adata.obs.index):
                 dist = 1.0 - distance.cosine(mapped_components[x],vector)
                 dists.append(dist)
@@ -790,15 +578,12 @@ class CellEmbedding(object):
                 assign = celltypes[numpy.argmax(ct)]
                 classif.append(assign)
         if method=="softmax":
-            probabilities = softmax(distribution,axis=1)
+            scaler = StandardScaler()
+            probabilities = softmax(scaler.fit_transform(numpy.array(distribution)),axis=1)
             for ct in probabilities:
                 assign = celltypes[numpy.argmax(ct)]
                 classif.append(assign)
         umap_pts = dict(zip(list(self.data.keys()),classif))
-        nu = []
-        for bc in adata.obs.index.tolist():
-            nu.append(umap_pts[bc])
-        adata.obs["cell_type"] = nu
         return {"distances":distribution, "order":celltypes, "probabilities":probabilities}
 
     def get_adata(self, min_dist=0.3, n_neighbors=50):
@@ -813,62 +598,6 @@ class CellEmbedding(object):
         sc.tl.umap(adata, min_dist=min_dist)
         self.adata = adata
         return adata
-
-    def clique_family_distances(self):
-        from scipy.spatial import distance
-        adata = self.adata
-        mapped_components = dict(zip(list(cembed.data.keys()),cembed.matrix))
-        gene_cluster_vectors = dict()
-        for gclust, genes in cluster_definitions.items():
-            vector = embed.generate_vector(genes)
-            gene_cluster_vectors[gclust] = vector
-        for gclust, vector in gene_cluster_vectors.items():
-            print("Computed CF: ",gclust)
-            dists = []
-            for x in adata.obs.index:
-                dist = 1.0 - distance.cosine(mapped_components[x],vector)
-                dists.append(dist)
-            adata.obs[gclust] = dists
-        self.adata = adata
-        return adata
-
-    def plot_clique(self,clique_genes,distance=0.5,threshold=-1.0, title=None):
-        import matplotlib as mpl
-        G = self.embed.generate_network(threshold=distance)
-        fig = plt.figure(figsize=(14,6))
-        ax = plt.subplot(1,2,1)
-        subG = G.subgraph(clique_genes)
-
-        centrality = dict(nx.betweenness_centrality(subG))
-        low, *_, high = sorted(centrality.values())
-        norm = mpl.colors.Normalize(vmin=low, vmax=high, clip=True)
-        mapper = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.coolwarm)
-        pos = nx.nx_agraph.graphviz_layout(subG, prog="neato",args="-Goverlap=scale -Elen=5 -Eweight=0.2")
-
-        nx.draw(subG,pos,with_labels=True,
-                node_color=[mapper.to_rgba(i) for i in centrality.values()],
-                node_size=100,ax=ax,font_size=16,
-                edge_color=[[0.5,0.5,0.5,0.5] for _ in subG.edges()])
-        clique_genes = set(clique_genes).difference(set(list(nx.isolates(subG))))
-        vector = self.embed.generate_vector(list(clique_genes))
-        ax = plt.subplot(1,2,2)
-        pcs = self.pcs["UMAP"]
-        distances = []
-        dataset_distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(self.dataset_vector).reshape(1, -1))[0])
-        for cell_vector in self.matrix:
-            distance = float(cosine_similarity(numpy.array(cell_vector).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
-            d = distance-dataset_distance
-            if d < threshold:
-                d = threshold
-            distances.append(d)
-        data = {"x":pcs[0],"y":pcs[1],"Distance": distances}
-        df = pandas.DataFrame.from_dict(data)
-        sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7)
-        if title != None:
-            plt.title(title)
-        plt.show()
-        return clique_genes
-
 
     def group_cell_vectors(self, label):
         barcode_to_label = dict(zip(self.context.adata.obs.index.tolist(),self.context.adata.obs[label]))

@@ -173,12 +173,12 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
-def calculate_mi(jdf, gene1, gene2):
+def calculate_mi(jdf, gene1, gene2, bins):
     base = 2
     e1 = jdf.loc[gene1]
     e2 = jdf.loc[gene2]
     e = numpy.array([e1,e2]).astype(int)
-    hgram = numpy.histogram2d(e1,e2,bins=numpy.max(e))[0]
+    hgram = numpy.histogram2d(e1,e2,bins=bins)[0]
     pxy = hgram / float(np.sum(hgram))
     px = np.sum(pxy, axis=1) # marginal for x over y
     py = np.sum(pxy, axis=0) # marginal for y over x
@@ -189,9 +189,9 @@ def calculate_mi(jdf, gene1, gene2):
 
 def calculate_mi_parallel(payload):
     mi_scores = dict()
-    jdf, gene, genes = payload
+    jdf, gene, genes, bins = payload
     for other in genes:
-        mi_scores[other] = calculate_mi(jdf, gene, other)
+        mi_scores[other] = calculate_mi(jdf, gene, other, bins)
     return mi_scores
 
 class CompassDataset(Dataset):
@@ -205,7 +205,7 @@ class CompassDataset(Dataset):
         self.device = device
 
 
-    def generate_mi_scores_parallel(self,processes=10):
+    def generate_mi_scores_parallel(self,processes=10, bins=20):
         df = pandas.DataFrame.from_dict(self.data.expression)
         df = df.fillna(0)
         self.jdf = df
@@ -216,7 +216,7 @@ class CompassDataset(Dataset):
         payloads = []
         while len(genes) > 0:
             gene = genes.pop(0)
-            payloads.append((self.jdf, gene, copy.deepcopy(genes)))
+            payloads.append((self.jdf, gene, copy.deepcopy(genes), bins))
         with Pool(processes) as p:
             results = p.map(calculate_mi_parallel, payloads)
             print(len(results))
@@ -239,8 +239,6 @@ class CompassDataset(Dataset):
         self.data.id2gene = index_gene
         self.data.expressed_genes = all_genes
 
-        print("Computing Mutual Information...")
-        self.generate_mi_scores_parallel()
         print("Complete.")
 
         self._i_idx = list()

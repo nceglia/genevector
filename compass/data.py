@@ -28,6 +28,12 @@ import matplotlib.pyplot as plt
 import scipy
 import pandas
 from sklearn import feature_extraction
+from multiprocess import Pool
+import copy
+import pandas
+import numpy
+import numpy as np
+import tqdm
 
 class Context(object):
 
@@ -133,7 +139,6 @@ class Context(object):
         data = self.filter_on_frequency(data)
         return data, self.inverse_filter(data)
 
-
     def filter_on_frequency(self, data):
         remove = []
         for gene, frequency in self.gene_frequency.items():
@@ -168,7 +173,26 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
+def calculate_mi(jdf, gene1, gene2):
+    base = 2
+    e1 = jdf.loc[gene1]
+    e2 = jdf.loc[gene2]
+    e = numpy.array([e1,e2]).astype(int)
+    hgram = numpy.histogram2d(e1,e2,bins=numpy.max(e))[0]
+    pxy = hgram / float(np.sum(hgram))
+    px = np.sum(pxy, axis=1) # marginal for x over y
+    py = np.sum(pxy, axis=0) # marginal for y over x
+    px_py = px[:, None] * py[None, :] # Broadcast to multiply marginals
+    # Now we can do the calculation using the pxy, px_py 2D arrays
+    nzs = pxy > 0 # Only non-zero pxy values contribute to the sum
+    return np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs]))
 
+def calculate_mi_parallel(payload):
+    mi_scores = dict()
+    jdf, gene, genes = payload
+    for other in genes:
+        mi_scores[other] = calculate_mi(jdf, gene, other)
+    return mi_scores
 
 class CompassDataset(Dataset):
 
@@ -180,29 +204,29 @@ class CompassDataset(Dataset):
         self.features = features
         self.device = device
 
-    def joint_probability(self):
+
+    def generate_mi_scores_parallel(self,processes=10):
         df = pandas.DataFrame.from_dict(self.data.expression)
         df = df.fillna(0)
-        self.jdf = df / df.sum()
-
-    def calculate_mi(self, gene1,gene2,base=2):
-        e1 = self.jdf.loc[gene1]
-        e2 = self.jdf.loc[gene2]
-        e = numpy.array([e1,e2])
-        e = e[:,e.min(axis=0)>0]
-        return scipy.stats.entropy(e[0],base=base) - scipy.stats.entropy(e[0],e[1],base=base)
-
-    def generate_mi_scores(self):
-        self.joint_probability()
+        self.jdf = df
         genes = self.jdf.index.tolist()
-        self.mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
-        for _ in tqdm.tqdm(range(len(genes))):
+        total_genes = genes
+        mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
+        num_genes = len(genes)
+        payloads = []
+        while len(genes) > 0:
             gene = genes.pop(0)
-            for other in genes:
-                self.mi_scores[gene][other] = self.calculate_mi(gene, other)
-                self.mi_scores[other][gene] = self.mi_scores[gene][other]
+            payloads.append((self.jdf, gene, copy.deepcopy(genes)))
+        with Pool(processes) as p:
+            results = p.map(calculate_mi_parallel, payloads)
+            print(len(results))
+            for p, r in zip(payloads,results):
+                for gene, res in r.items():
+                    mi_scores[p[1]][gene] = res
+                    mi_scores[gene][p[1]] = res
+        self.mi_scores = mi_scores
 
-    def create_inputs_outputs(self, coocc=None, cov=None):
+    def create_inputs_outputs(self, processes=10):
         print("Loading Genes and Expression.")
 
         vectorizer = feature_extraction.DictVectorizer(sparse=True)
@@ -216,7 +240,7 @@ class CompassDataset(Dataset):
         self.data.expressed_genes = all_genes
 
         print("Computing Mutual Information...")
-        self.generate_mi_scores()
+        self.generate_mi_scores_parallel()
         print("Complete.")
 
         self._i_idx = list()
@@ -246,6 +270,8 @@ class CompassDataset(Dataset):
             self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
             self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
             self._xij = torch.FloatTensor(self._xij).to("cpu")
+
+
 
     def get_batches(self, batch_size):
         if self.device == "cuda":

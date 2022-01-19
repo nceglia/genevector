@@ -173,19 +173,20 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
-def calculate_mi(jdf, gene1, gene2, bins):
+def calculate_mi(jdf, gene1, gene2):
     base = 2
     e1 = jdf.loc[gene1]
     e2 = jdf.loc[gene2]
     e = numpy.array([e1,e2]).astype(int)
-    hgram = numpy.histogram2d(e1,e2,bins=bins)[0]
+#     plot_joint_df(e[0],e[1], title=gene1 + " " + gene2)
+    hgram = numpy.histogram2d(e1,e2,bins=30)[0]
     pxy = hgram / float(np.sum(hgram))
-    px = np.sum(pxy, axis=1) # marginal for x over y
-    py = np.sum(pxy, axis=0) # marginal for y over x
-    px_py = px[:, None] * py[None, :] # Broadcast to multiply marginals
-    # Now we can do the calculation using the pxy, px_py 2D arrays
-    nzs = pxy > 0 # Only non-zero pxy values contribute to the sum
-    return np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs]))
+    px = np.sum(pxy, axis=1)
+    py = np.sum(pxy, axis=0)
+    px_py = px[:, None] * py[None, :]
+    nzs = pxy > 0
+    #return (np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs]))) * len(e[0])
+    return sum(pxy[nzs] / px_py[nzs])
 
 def calculate_mi_parallel(payload):
     mi_scores = dict()

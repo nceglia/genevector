@@ -178,21 +178,19 @@ def calculate_mi(jdf, gene1, gene2):
     e1 = jdf.loc[gene1]
     e2 = jdf.loc[gene2]
     e = numpy.array([e1,e2]).astype(int)
-#     plot_joint_df(e[0],e[1], title=gene1 + " " + gene2)
     hgram = numpy.histogram2d(e1,e2,bins=30)[0]
     pxy = hgram / float(np.sum(hgram))
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
-    #return (np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs]))) * len(e[0])
-    return sum(pxy[nzs] / px_py[nzs])
+    return np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs])) *  len(e[0])
 
 def calculate_mi_parallel(payload):
     mi_scores = dict()
-    jdf, gene, genes, bins = payload
+    jdf, gene, genes = payload
     for other in genes:
-        mi_scores[other] = calculate_mi(jdf, gene, other, bins)
+        mi_scores[other] = calculate_mi(jdf, gene, other)
     return mi_scores
 
 class CompassDataset(Dataset):

@@ -190,7 +190,9 @@ def calculate_mi(jdf, gene1, gene2):
 
 def calculate_mi_parallel(payload):
     mi_scores = dict()
-    jdf, gene, genes = payload
+    jdf = payload[0]
+    gene = payload[1]
+    genes = payload[2]
     for other in genes:
         mi_scores[other] = calculate_mi(jdf, gene, other)
     return mi_scores
@@ -216,7 +218,9 @@ class CompassDataset(Dataset):
         payloads = []
         while len(genes) > 0:
             gene = genes.pop(0)
-            payloads.append((self.jdf, gene, copy.deepcopy(genes)))
+            payload = (self.jdf, gene, copy.deepcopy(genes))
+            if len(payload) == 3:
+                payloads.append(payload)
         with Pool(processes) as p:
             results = p.map(calculate_mi_parallel, payloads)
             print(len(results))

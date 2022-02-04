@@ -177,14 +177,16 @@ def calculate_mi(jdf, gene1, gene2):
     base = 2
     e1 = jdf.loc[gene1]
     e2 = jdf.loc[gene2]
-    e = numpy.array([e1,e2]).astype(int)
-    hgram = numpy.histogram2d(e1,e2,bins=30)[0]
+    xbins = list(sorted([int(x) for x in set(e1)]))
+    ybins = list(sorted([int(x) for x in set(e2)]))
+    hgram, x, y = numpy.histogram2d(e1,e2,bins=[xbins,ybins])
     pxy = hgram / float(np.sum(hgram))
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
-    return np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs])) *  len(e[0])
+    expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
+    return max([expected_pmi,0])
 
 def calculate_mi_parallel(payload):
     mi_scores = dict()
@@ -203,7 +205,6 @@ class CompassDataset(Dataset):
         self.features = features
         self.device = device
 
-
     def generate_mi_scores_parallel(self,processes=10, bins=20):
         df = pandas.DataFrame.from_dict(self.data.expression)
         df = df.fillna(0)
@@ -215,7 +216,7 @@ class CompassDataset(Dataset):
         payloads = []
         while len(genes) > 0:
             gene = genes.pop(0)
-            payloads.append((self.jdf, gene, copy.deepcopy(genes), bins))
+            payloads.append((self.jdf, gene, copy.deepcopy(genes)))
         with Pool(processes) as p:
             results = p.map(calculate_mi_parallel, payloads)
             print(len(results))
@@ -229,7 +230,8 @@ class CompassDataset(Dataset):
         print("Loading Genes and Expression.")
 
         vectorizer = feature_extraction.DictVectorizer(sparse=True)
-        _ = vectorizer.fit_transform(list(self.data.expression.values()))
+        corr_matrix = vectorizer.fit_transform(list(self.data.expression.values()))
+        corr_matrix[corr_matrix != 0] = 1
 
         all_genes = vectorizer.feature_names_
         gene_index = {w: idx for (idx, w) in enumerate(all_genes)}
@@ -237,6 +239,13 @@ class CompassDataset(Dataset):
         self.data.gene2id = gene_index
         self.data.id2gene = index_gene
         self.data.expressed_genes = all_genes
+
+        corr_matrix = pandas.DataFrame(data=corr_matrix.todense(),columns=all_genes)
+        corr_matrix = corr_matrix[all_genes]
+        corr_df = corr_matrix
+
+        print("Decomposing")
+        coocc = numpy.array(corr_df.T.dot(corr_df))
 
         print("Complete.")
 
@@ -253,11 +262,12 @@ class CompassDataset(Dataset):
                 self._j_idx.append(ci)
                 try:
                     if self.mi_scores[gene][cgene] > 0.0:
-                        self._xij.append(1.0 + self.mi_scores[gene][cgene])
+                        self._xij.append(1.0 + (self.mi_scores[gene][cgene] * coocc[wi,ci]))
                     else:
                         self._xij.append(1.0)
                 except Exception as e:
                     self._xij.append(1.0)
+
         print("Complete.")
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
@@ -267,7 +277,7 @@ class CompassDataset(Dataset):
             self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
             self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
             self._xij = torch.FloatTensor(self._xij).to("cpu")
-
+        self.coocc = coocc
 
 
     def get_batches(self, batch_size):

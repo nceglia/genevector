@@ -15,8 +15,8 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.init import xavier_normal
 
-def weight_func(x, x_max, alpha, device):
-    wx = (x/x_max)**alpha
+def weight_func(x, coocc, device):
+    wx = x * coocc
     wx = torch.min(wx, torch.ones_like(wx))
     # if device == "cuda":
     #     return wx.cuda()
@@ -37,19 +37,19 @@ class CompassModel(nn.Module):
         super(CompassModel, self).__init__()
         self.wi = nn.Embedding(num_embeddings, embedding_dim)
         self.wj = nn.Embedding(num_embeddings, embedding_dim)
-        self.bi = nn.Embedding(num_embeddings, 1)
-        self.bj = nn.Embedding(num_embeddings, 1)
+        # self.bi = nn.Embedding(num_embeddings, 1)
+        # self.bj = nn.Embedding(num_embeddings, 1)
         self.wi.weight.data.uniform_(-1, 1)
         self.wj.weight.data.uniform_(-1, 1)
-        self.bi.weight.data.zero_()
-        self.bj.weight.data.zero_()
+        # self.bi.weight.data.zero_()
+        # self.bj.weight.data.zero_()
 
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)
         w_j = self.wj(j_indices)
-        b_i = self.bi(i_indices).squeeze()
-        b_j = self.bj(j_indices).squeeze()
-        x = torch.sum(w_i * w_j, dim=1) + b_i + b_j
+        # b_i = self.bi(i_indices).squeeze()
+        # b_j = self.bj(j_indices).squeeze()
+        x = torch.sum(w_i * w_j, dim=1) #+ b_i + b_j
         return x
 
     def save_embedding(self, id2word, file_name, layer):
@@ -93,7 +93,7 @@ class CompassTrainer(object):
                 batch_i += 1
                 self.optimizer.zero_grad()
                 outputs = self.model(i_idx, j_idx)
-                weights_x = weight_func(x_ij, self.x_max, self.alpha, self.device)
+                weights_x = weight_func(x_ij, self.dataset.coocc[i_idx,j_idx], self.device)
                 loss = wmse_loss(weights_x, outputs, x_ij, self.device)
                 loss.backward()
                 self.optimizer.step()

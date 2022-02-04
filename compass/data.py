@@ -262,7 +262,7 @@ class CompassDataset(Dataset):
                 self._j_idx.append(ci)
                 try:
                     if self.mi_scores[gene][cgene] > 0.0:
-                        self._xij.append(1.0 + (self.mi_scores[gene][cgene] * coocc[wi,ci]))
+                        self._xij.append(1.0 + self.mi_scores[gene][cgene])
                     else:
                         self._xij.append(1.0)
                 except Exception as e:

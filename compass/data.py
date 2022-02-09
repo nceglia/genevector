@@ -173,21 +173,6 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
-def calculate_mi(jdf, gene1, gene2):
-    base = 2
-    e1 = jdf.loc[gene1]
-    e2 = jdf.loc[gene2]
-    xbins = list(sorted([int(x) for x in set(e1)]))
-    ybins = list(sorted([int(x) for x in set(e2)]))
-    hgram, x, y = numpy.histogram2d(e1,e2,bins=[xbins,ybins])
-    pxy = hgram / float(np.sum(hgram))
-    px = np.sum(pxy, axis=1)
-    py = np.sum(pxy, axis=0)
-    px_py = px[:, None] * py[None, :]
-    nzs = pxy > 0
-    expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
-    return max([expected_pmi,0])
-
 def calculate_mi_parallel(payload):
     mi_scores = dict()
     jdf = payload[0]
@@ -196,6 +181,23 @@ def calculate_mi_parallel(payload):
     for other in genes:
         mi_scores[other] = calculate_mi(jdf, gene, other)
     return mi_scores
+
+def calculate_mi(jdf, gene1, gene2):
+    e = numpy.array([jdf.loc[gene1],jdf.loc[gene2]]).T
+    e = e[e.min(axis=1) > 0].astype(int)
+    xbins = list(sorted([x for x in set(e[:,0])]))
+    ybins = list(sorted([x for x in set(e[:,1])]))
+    if xbins == [] or ybins == []:
+        return 0.0
+    hgram, x, y = numpy.histogram2d(e[:,0],e[:,1],bins=(xbins,ybins))
+    pxy = hgram / float(np.sum(hgram))
+    px = np.sum(pxy, axis=1)
+    py = np.sum(pxy, axis=0)
+    px_py = px[:, None] * py[None, :]
+    nzs = pxy > 0
+    expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
+    ppmi = max([expected_pmi,0])
+    return numpy.nan_to_num(ppmi)
 
 class CompassDataset(Dataset):
 
@@ -207,7 +209,7 @@ class CompassDataset(Dataset):
         self.features = features
         self.device = device
 
-    def generate_mi_scores_parallel(self,processes=10, bins=20):
+    def generate_mi_scores_parallel(self,processes=10):
         df = pandas.DataFrame.from_dict(self.data.expression)
         df = df.fillna(0)
         self.jdf = df
@@ -230,14 +232,17 @@ class CompassDataset(Dataset):
                     mi_scores[gene][p[1]] = res
         self.mi_scores = mi_scores
 
-    def create_inputs_outputs(self, processes=10):
-        print("Loading Genes and Expression.")
+    def create_inputs_outputs(self):
+        print("Generating Correlation matrix.")
+        import pandas
 
+        from sklearn import feature_extraction
         vectorizer = feature_extraction.DictVectorizer(sparse=True)
         corr_matrix = vectorizer.fit_transform(list(self.data.expression.values()))
         corr_matrix[corr_matrix != 0] = 1
 
         all_genes = vectorizer.feature_names_
+
         gene_index = {w: idx for (idx, w) in enumerate(all_genes)}
         index_gene = {idx: w for (idx, w) in enumerate(all_genes)}
         self.data.gene2id = gene_index
@@ -251,28 +256,24 @@ class CompassDataset(Dataset):
         print("Decomposing")
         coocc = numpy.array(corr_df.T.dot(corr_df))
 
-        print("Complete.")
+        corr_matrix = numpy.transpose(corr_matrix.to_numpy())
+        cov = numpy.corrcoef(corr_matrix)
 
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
-
-        print("Creating Training Data.")
-        for gene in tqdm.tqdm(all_genes):
-            for cgene in all_genes:
+        # mi_scores = self.data.mutual_information()
+        for gene, row in tqdm.tqdm(zip(all_genes, cov)):
+            for cgene, value in zip(all_genes, row):
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                try:
-                    if self.mi_scores[gene][cgene] > 0.0:
-                        self._xij.append(1.0 + self.mi_scores[gene][cgene])
-                    else:
-                        self._xij.append(1.0)
-                except Exception as e:
+                if value > 0.0:
+                    self._xij.append(float(value) * coocc[wi,ci] + 1.0)
+                else:
                     self._xij.append(1.0)
 
-        print("Complete.")
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()
@@ -282,6 +283,7 @@ class CompassDataset(Dataset):
             self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
             self._xij = torch.FloatTensor(self._xij).to("cpu")
         self.coocc = coocc
+        self.cov = cov
 
 
     def get_batches(self, batch_size):

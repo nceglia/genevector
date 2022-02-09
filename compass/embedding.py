@@ -550,7 +550,7 @@ class CellEmbedding(object):
         probs = dict()
         for pheno, markers in phenotype_markers.items():
             dists = []
-            vector = embed.generate_vector(markers)
+            vector = self.embed.generate_vector(markers)
             ovecs = []
             for oph, ovec in phenotype_markers.items():
                 ovec = embed.generate_vector(ovec)

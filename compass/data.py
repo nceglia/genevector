@@ -199,11 +199,9 @@ def calculate_mi_parallel(payload):
 #     ppmi = max([expected_pmi,0])
 #     return numpy.nan_to_num(ppmi) * e.shape[0]
 
-def calculate_mi(jdf, gene1, gene2, bins=50):
+def calculate_mi(jdf, gene1, gene2, bins=100, x_max=10, alpha=0.5):
     e = numpy.array([jdf.loc[gene1],jdf.loc[gene2]]).T
     e = e[e.min(axis=1) > 0].astype(int)
-    if len(e[:,0]) == 0:
-        return 0.0
     xbins = []
     ybins = []
     for i in numpy.linspace(0,1,bins)[1:]:
@@ -211,22 +209,25 @@ def calculate_mi(jdf, gene1, gene2, bins=50):
         ybins.append(int(np.quantile(e[:,1], i)))
     xbins = list(sorted(set(xbins)))
     ybins = list(sorted(set(ybins)))
+    xent = entropy(e[:,0])
+    yent = entropy(e[:,1])
     if xbins == [] or ybins == []:
         return 0.0
     hgram, xedges, yedges = numpy.histogram2d(e[:,0],e[:,1],bins=(xbins,ybins))
     pxy = hgram / float(np.sum(hgram))
-    # thresh = np.quantile(pxy.flatten(), 0.95)
-    # fig, ax = plt.subplots(1,1,figsize=(6,6))
-    # ax.imshow(pxy,origin="lower",vmax=thresh)
-    # ax.grid(False)
-    # plt.tight_layout()
+#     thresh = np.quantile(pxy.flatten(), 0.95)
+#     fig, ax = plt.subplots(1,1,figsize=(6,6))
+#     ax.imshow(pxy,origin="lower",vmax=thresh)
+#     ax.grid(False)
+#     plt.tight_layout()
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
     expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
     ppmi = max([expected_pmi,0]) #/ numpy.mean([xent,yent])
-    return numpy.nan_to_num(ppmi) * e.shape[0]
+    wppmi = numpy.nan_to_num(ppmi) * e.shape[0]
+    return (wppmi/x_max)**alpha
 
 
 

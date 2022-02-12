@@ -182,22 +182,53 @@ def calculate_mi_parallel(payload):
         mi_scores[other] = calculate_mi(jdf, gene, other)
     return mi_scores
 
-def calculate_mi(jdf, gene1, gene2):
+# def calculate_mi(jdf, gene1, gene2):
+#     e = numpy.array([jdf.loc[gene1],jdf.loc[gene2]]).T
+#     e = e[e.min(axis=1) > 0].astype(int)
+#     xbins = list(sorted([x for x in set(e[:,0])]))
+#     ybins = list(sorted([x for x in set(e[:,1])]))
+#     if xbins == [] or ybins == []:
+#         return 0.0
+#     hgram, x, y = numpy.histogram2d(e[:,0],e[:,1],bins=(xbins,ybins))
+#     pxy = hgram / float(np.sum(hgram))
+#     px = np.sum(pxy, axis=1)
+#     py = np.sum(pxy, axis=0)
+#     px_py = px[:, None] * py[None, :]
+#     nzs = pxy > 0
+#     expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
+#     ppmi = max([expected_pmi,0])
+#     return numpy.nan_to_num(ppmi) * e.shape[0]
+
+def calculate_mi(jdf, gene1, gene2, bins=50):
     e = numpy.array([jdf.loc[gene1],jdf.loc[gene2]]).T
     e = e[e.min(axis=1) > 0].astype(int)
-    xbins = list(sorted([x for x in set(e[:,0])]))
-    ybins = list(sorted([x for x in set(e[:,1])]))
+    if len(e[:,0]) == 0:
+        return 0.0
+    xbins = []
+    ybins = []
+    for i in numpy.linspace(0,1,bins)[1:]:
+        xbins.append(int(np.quantile(e[:,0], i)))
+        ybins.append(int(np.quantile(e[:,1], i)))
+    xbins = list(sorted(set(xbins)))
+    ybins = list(sorted(set(ybins)))
     if xbins == [] or ybins == []:
         return 0.0
-    hgram, x, y = numpy.histogram2d(e[:,0],e[:,1],bins=(xbins,ybins))
+    hgram, xedges, yedges = numpy.histogram2d(e[:,0],e[:,1],bins=(xbins,ybins))
     pxy = hgram / float(np.sum(hgram))
+    # thresh = np.quantile(pxy.flatten(), 0.95)
+    # fig, ax = plt.subplots(1,1,figsize=(6,6))
+    # ax.imshow(pxy,origin="lower",vmax=thresh)
+    # ax.grid(False)
+    # plt.tight_layout()
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
     expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
-    ppmi = max([expected_pmi,0])
-    return numpy.nan_to_num(ppmi)
+    ppmi = max([expected_pmi,0]) #/ numpy.mean([xent,yent])
+    return numpy.nan_to_num(ppmi) * e.shape[0]
+
+
 
 class CompassDataset(Dataset):
 
@@ -225,7 +256,6 @@ class CompassDataset(Dataset):
                 payloads.append(payload)
         with Pool(processes) as p:
             results = p.map(calculate_mi_parallel, payloads)
-            print(len(results))
             for p, r in zip(payloads,results):
                 for gene, res in r.items():
                     mi_scores[p[1]][gene] = res
@@ -270,7 +300,7 @@ class CompassDataset(Dataset):
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
                 if value > 0.0:
-                    self._xij.append(float(value) * coocc[wi,ci] + 1.0)
+                    self._xij.append(self.mi_scores[gene][cgene] + 1.0)
                 else:
                     self._xij.append(1.0)
 

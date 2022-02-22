@@ -178,58 +178,42 @@ def calculate_mi_parallel(payload):
     jdf = payload[0]
     gene = payload[1]
     genes = payload[2]
+    gene_profile = jdf.loc[gene]
+    if list(gene_profile > 0).count(True) < 50:
+        return mi_scores
     for other in genes:
-        mi_scores[other] = calculate_mi(jdf, gene, other)
+        e = numpy.array([gene_profile,jdf.loc[other]]).T
+        e = e[e.min(axis=1) > 0].astype(int)
+        if len(e[:,0]) != 0 or e.shape[0] > 20:
+            mi_scores[other] = calculate_mi(e, gene, other)
+    print(gene)
     return mi_scores
 
-# def calculate_mi(jdf, gene1, gene2):
-#     e = numpy.array([jdf.loc[gene1],jdf.loc[gene2]]).T
-#     e = e[e.min(axis=1) > 0].astype(int)
-#     xbins = list(sorted([x for x in set(e[:,0])]))
-#     ybins = list(sorted([x for x in set(e[:,1])]))
-#     if xbins == [] or ybins == []:
-#         return 0.0
-#     hgram, x, y = numpy.histogram2d(e[:,0],e[:,1],bins=(xbins,ybins))
-#     pxy = hgram / float(np.sum(hgram))
-#     px = np.sum(pxy, axis=1)
-#     py = np.sum(pxy, axis=0)
-#     px_py = px[:, None] * py[None, :]
-#     nzs = pxy > 0
-#     expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
-#     ppmi = max([expected_pmi,0])
-#     return numpy.nan_to_num(ppmi) * e.shape[0]
-
-def calculate_mi(jdf, gene1, gene2, bins=100, x_max=10, alpha=0.5):
-    e = numpy.array([jdf.loc[gene1],jdf.loc[gene2]]).T
-    e = e[e.min(axis=1) > 0].astype(int)
+def calculate_mi(e, gene1, gene2, bins=50, x_max=3, alpha=0.25):
     xbins = []
     ybins = []
     for i in numpy.linspace(0,1,bins)[1:]:
-        xbins.append(int(np.quantile(e[:,0], i)))
-        ybins.append(int(np.quantile(e[:,1], i)))
-    xbins = list(sorted(set(xbins)))
-    ybins = list(sorted(set(ybins)))
-    xent = entropy(e[:,0])
-    yent = entropy(e[:,1])
-    if xbins == [] or ybins == []:
+        x1 = int(np.quantile(e[:,0], i))
+        if x1 not in xbins:
+            xbins.append(x1)
+        y1 = int(np.quantile(e[:,1], i))
+        if y1 not in ybins:
+            ybins.append(y1)
+    if len(xbins) < 3 or len(ybins) < 3:
         return 0.0
-    hgram, xedges, yedges = numpy.histogram2d(e[:,0],e[:,1],bins=(xbins,ybins))
+    try:
+        hgram, xedges, yedges = numpy.histogram2d(e[:,0],e[:,1],bins=(xbins,ybins))
+    except Exception as e:
+        return 0.0
     pxy = hgram / float(np.sum(hgram))
-#     thresh = np.quantile(pxy.flatten(), 0.95)
-#     fig, ax = plt.subplots(1,1,figsize=(6,6))
-#     ax.imshow(pxy,origin="lower",vmax=thresh)
-#     ax.grid(False)
-#     plt.tight_layout()
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
     expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
-    ppmi = max([expected_pmi,0]) #/ numpy.mean([xent,yent])
+    ppmi = max([expected_pmi,0])
     wppmi = numpy.nan_to_num(ppmi) * e.shape[0]
     return (wppmi/x_max)**alpha
-
-
 
 class CompassDataset(Dataset):
 
@@ -300,8 +284,12 @@ class CompassDataset(Dataset):
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
+                # if gene in self.mi_scores and cgene in self.mi_scores[gene]:
+                #     self._xij.append(self.mi_scores[gene][cgene])
+                # else:
+                #     self._xij.append(0.0)
                 if value > 0.0:
-                    self._xij.append(self.mi_scores[gene][cgene] + 1.0)
+                    self._xij.append(float(value) * coocc[wi,ci] + 1.0)
                 else:
                     self._xij.append(1.0)
 

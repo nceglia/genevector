@@ -92,8 +92,8 @@ class CompassTrainer(object):
                 self.optimizer.zero_grad()
                 outputs = self.model(i_idx, j_idx)
                 distances = []
-                #weights_x = weight_func(x_ij, d_ij, self.device)
-                loss = wmse_loss(d_ij, outputs, torch.log(x_ij), self.device)
+                weights_x = weight_func(x_ij, d_ij, self.device)
+                loss = wmse_loss(x_ij, outputs, d_ij, self.device)
                 loss.backward()
                 self.optimizer.step()
                 loss_values.append(loss.item())

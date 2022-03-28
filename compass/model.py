@@ -15,15 +15,10 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.init import xavier_normal
 
-# def weight_func(x, x_max, alpha, device):
-#     wx = x
-#     return wx.to(device)
-def weight_func(x, x_max, alpha, device):
-    wx = (x/x_max)**alpha
-    wx = torch.min(wx, torch.ones_like(wx))
-    # if device == "cuda":
-    #     return wx.cuda()
-    # else:
+import numpy
+
+def weight_func(x, d, device):
+    wx = torch.mul(x,d)
     return wx.to(device)
 
 def wmse_loss(weights, inputs, targets, device):
@@ -92,11 +87,12 @@ class CompassTrainer(object):
         loss_values = list()
         for e in range(1, epochs+1):
             batch_i = 0
-            for x_ij, i_idx, j_idx in self.dataset.get_batches(self.batch_size):
+            for x_ij, i_idx, j_idx, d_ij in self.dataset.get_batches(self.batch_size):
                 batch_i += 1
                 self.optimizer.zero_grad()
                 outputs = self.model(i_idx, j_idx)
-                weights_x = weight_func(x_ij, self.x_max, self.alpha, self.device)
+                distances = []
+                weights_x = weight_func(x_ij, d_ij, self.device)
                 loss = wmse_loss(weights_x, outputs, torch.log(x_ij), self.device)
                 loss.backward()
                 self.optimizer.step()

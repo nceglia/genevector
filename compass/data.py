@@ -189,7 +189,7 @@ def calculate_mi_parallel(payload):
     print(gene)
     return mi_scores
 
-def calculate_mi(e, gene1, gene2, bins=50, x_max=3, alpha=0.25):
+def calculate_mi(e, gene1, gene2, bins=50):
     xbins = []
     ybins = []
     for i in numpy.linspace(0,1,bins)[1:]:
@@ -211,9 +211,8 @@ def calculate_mi(e, gene1, gene2, bins=50, x_max=3, alpha=0.25):
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
     expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
-    ppmi = max([expected_pmi,0])
-    wppmi = numpy.nan_to_num(ppmi) * e.shape[0]
-    return (wppmi/x_max)**alpha
+    return expected_pmi
+    #ppmi = max([expected_pmi,0])
 
 class CompassDataset(Dataset):
 
@@ -276,30 +275,38 @@ class CompassDataset(Dataset):
 
         self._i_idx = list()
         self._j_idx = list()
+        self._d_ij = list()
         self._xij = list()
-        # mi_scores = self.data.mutual_information()
+
+
         for gene, row in tqdm.tqdm(zip(all_genes, cov)):
             for cgene, value in zip(all_genes, row):
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                # if gene in self.mi_scores and cgene in self.mi_scores[gene]:
-                #     self._xij.append(self.mi_scores[gene][cgene])
-                # else:
-                #     self._xij.append(0.0)
-                if value > 0.0:
-                    self._xij.append(float(value) * coocc[wi,ci] + 1.0)
+                mi = self.mi_scores[gene][cgene]
+                if coocc[wi,ci] > 0.0 and mi > 0.0:
+                    self._xij.append(coocc[wi,ci] + 1.0)
+                    self._d_ij.append(self.mi_scores[gene][cgene])
                 else:
-                    self._xij.append(1.0)
-
+                    self._xij.append(coocc[wi,ci] + 1.0)
+                    self._d_ij.append(0.0)
+                # if value > 0.0:# and coocc[wi,ci] > 0.0:
+                #     self._xij.append(coocc[wi,ci] + 1.0)
+                #     self._d_ij.append(float(self.mi_scores[gene][cgene]))
+                # else:
+                #     self._xij.append(1.0)
+                #     self._d_ij.append(0.0)
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()
+            self._d_ij = torch.cuda.FloatTensor(self._d_ij).cuda()
             self._xij = torch.cuda.FloatTensor(self._xij).cuda()
         else:
             self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
             self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
+            self._d_ij = torch.FloatTensor(self._d_ij).to("cpu")
             self._xij = torch.FloatTensor(self._xij).to("cpu")
         self.coocc = coocc
         self.cov = cov
@@ -312,4 +319,4 @@ class CompassDataset(Dataset):
             rand_ids = torch.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))
         for p in range(0, len(rand_ids), batch_size):
             batch_ids = rand_ids[p:p+batch_size]
-            yield self._xij[batch_ids], self._i_idx[batch_ids], self._j_idx[batch_ids]
+            yield self._xij[batch_ids], self._i_idx[batch_ids], self._j_idx[batch_ids], self._d_ij[batch_ids]

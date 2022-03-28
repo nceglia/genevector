@@ -307,4 +307,4 @@ class CompassDataset(Dataset):
             rand_ids = torch.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))
         for p in range(0, len(rand_ids), batch_size):
             batch_ids = rand_ids[p:p+batch_size]
-            yield self._xij[batch_ids], self._i_idx[batch_ids], self._j_idx[batch_ids], self._d_ij[batch_ids]
+            yield self._xij[batch_ids], self._i_idx[batch_ids], self._j_idx[batch_ids]

@@ -189,7 +189,7 @@ def calculate_mi_parallel(payload):
     print(gene)
     return mi_scores
 
-def calculate_mi(e, gene1, gene2, bins=50):
+def calculate_mi(e, gene1, gene2, bins=50, x_max=3, alpha=0.25):
     xbins = []
     ybins = []
     for i in numpy.linspace(0,1,bins)[1:]:
@@ -212,7 +212,8 @@ def calculate_mi(e, gene1, gene2, bins=50):
     nzs = pxy > 0
     expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
     ppmi = max([expected_pmi,0])
-    return ppmi
+    wppmi = numpy.nan_to_num(ppmi) * e.shape[0]
+    return (wppmi/x_max)**alpha
 
 class CompassDataset(Dataset):
 
@@ -275,9 +276,7 @@ class CompassDataset(Dataset):
 
         self._i_idx = list()
         self._j_idx = list()
-        self._d_ij = list()
         self._xij = list()
-
 
         for gene, row in tqdm.tqdm(zip(all_genes, cov)):
             for cgene, value in zip(all_genes, row):
@@ -285,28 +284,17 @@ class CompassDataset(Dataset):
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                mi = self.mi_scores[gene][cgene]
-                if coocc[wi,ci] > 0.0 and mi > 0.0:
-                    self._xij.append(coocc[wi,ci] + 1.0)
-                    self._d_ij.append(self.mi_scores[gene][cgene])
+                if value > 0.0:
+                    self._xij.append(value * coocc[wi,ci] + 1.0)
                 else:
-                    self._xij.append(coocc[wi,ci] + 1.0)
-                    self._d_ij.append(0.0)
-                # if value > 0.0:# and coocc[wi,ci] > 0.0:
-                #     self._xij.append(coocc[wi,ci] + 1.0)
-                #     self._d_ij.append(float(self.mi_scores[gene][cgene]))
-                # else:
-                #     self._xij.append(1.0)
-                #     self._d_ij.append(0.0)
+                    self._xij.append(1.0)
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()
-            self._d_ij = torch.cuda.FloatTensor(self._d_ij).cuda()
             self._xij = torch.cuda.FloatTensor(self._xij).cuda()
         else:
             self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
             self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
-            self._d_ij = torch.FloatTensor(self._d_ij).to("cpu")
             self._xij = torch.FloatTensor(self._xij).to("cpu")
         self.coocc = coocc
         self.cov = cov

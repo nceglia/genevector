@@ -15,10 +15,15 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.init import xavier_normal
 
-import numpy
-
-def weight_func(x, d, device):
-    wx = torch.mul(x,d)
+# def weight_func(x, x_max, alpha, device):
+#     wx = x
+#     return wx.to(device)
+def weight_func(x, x_max, alpha, device):
+    wx = (x/x_max)**alpha
+    wx = torch.min(wx, torch.ones_like(wx))
+    # if device == "cuda":
+    #     return wx.cuda()
+    # else:
     return wx.to(device)
 
 def wmse_loss(weights, inputs, targets, device):
@@ -35,19 +40,19 @@ class CompassModel(nn.Module):
         super(CompassModel, self).__init__()
         self.wi = nn.Embedding(num_embeddings, embedding_dim)
         self.wj = nn.Embedding(num_embeddings, embedding_dim)
-        # self.bi = nn.Embedding(num_embeddings, 1)
-        # self.bj = nn.Embedding(num_embeddings, 1)
+        self.bi = nn.Embedding(num_embeddings, 1)
+        self.bj = nn.Embedding(num_embeddings, 1)
         self.wi.weight.data.uniform_(-1, 1)
         self.wj.weight.data.uniform_(-1, 1)
-        # self.bi.weight.data.zero_()
-        # self.bj.weight.data.zero_()
+        self.bi.weight.data.zero_()
+        self.bj.weight.data.zero_()
 
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)
         w_j = self.wj(j_indices)
-        # b_i = self.bi(i_indices).squeeze()
-        # b_j = self.bj(j_indices).squeeze()
-        x = torch.sum(w_i * w_j, dim=1) #+ b_i + b_j
+        b_i = self.bi(i_indices).squeeze()
+        b_j = self.bj(j_indices).squeeze()
+        x = torch.sum(w_i * w_j, dim=1) + b_i + b_j
         return x
 
     def save_embedding(self, id2word, file_name, layer):
@@ -87,13 +92,12 @@ class CompassTrainer(object):
         loss_values = list()
         for e in range(1, epochs+1):
             batch_i = 0
-            for x_ij, i_idx, j_idx, d_ij in self.dataset.get_batches(self.batch_size):
+            for x_ij, i_idx, j_idx in self.dataset.get_batches(self.batch_size):
                 batch_i += 1
                 self.optimizer.zero_grad()
                 outputs = self.model(i_idx, j_idx)
-                distances = []
-                weights_x = weight_func(x_ij, d_ij, self.device)
-                loss = wmse_loss(x_ij, outputs, d_ij, self.device)
+                weights_x = weight_func(x_ij, self.x_max, self.alpha, self.device)
+                loss = wmse_loss(weights_x, outputs, torch.log(x_ij), self.device)
                 loss.backward()
                 self.optimizer.step()
                 loss_values.append(loss.item())

@@ -35,19 +35,19 @@ class CompassModel(nn.Module):
         super(CompassModel, self).__init__()
         self.wi = nn.Embedding(num_embeddings, embedding_dim)
         self.wj = nn.Embedding(num_embeddings, embedding_dim)
-        self.bi = nn.Embedding(num_embeddings, 1)
-        self.bj = nn.Embedding(num_embeddings, 1)
+        # self.bi = nn.Embedding(num_embeddings, 1)
+        # self.bj = nn.Embedding(num_embeddings, 1)
         self.wi.weight.data.uniform_(-1, 1)
         self.wj.weight.data.uniform_(-1, 1)
-        self.bi.weight.data.zero_()
-        self.bj.weight.data.zero_()
+        # self.bi.weight.data.zero_()
+        # self.bj.weight.data.zero_()
 
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)
         w_j = self.wj(j_indices)
-        b_i = self.bi(i_indices).squeeze()
-        b_j = self.bj(j_indices).squeeze()
-        x = torch.sum(w_i * w_j, dim=1) + b_i + b_j
+        # b_i = self.bi(i_indices).squeeze()
+        # b_j = self.bj(j_indices).squeeze()
+        x = torch.sum(w_i * w_j, dim=1) #+ b_i + b_j
         return x
 
     def save_embedding(self, id2word, file_name, layer):
@@ -93,7 +93,7 @@ class CompassTrainer(object):
                 outputs = self.model(i_idx, j_idx)
                 distances = []
                 weights_x = weight_func(x_ij, d_ij, self.device)
-                loss = wmse_loss(weights_x, outputs, torch.log(x_ij), self.device)
+                loss = wmse_loss(weights_x, outputs, x_ij, self.device)
                 loss.backward()
                 self.optimizer.step()
                 loss_values.append(loss.item())

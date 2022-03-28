@@ -211,8 +211,8 @@ def calculate_mi(e, gene1, gene2, bins=50):
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
     expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
-    return expected_pmi
-    #ppmi = max([expected_pmi,0])
+    ppmi = max([expected_pmi,0])
+    return ppmi
 
 class CompassDataset(Dataset):
 

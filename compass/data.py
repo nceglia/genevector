@@ -216,8 +216,8 @@ def calculate_mi(e, gene1, gene2, bins=50, x_max=3, alpha=0.25):
 
 class CompassDataset(Dataset):
 
-    def __init__(self, adata, device="cpu"):
-        self.data = Context.build(adata)
+    def __init__(self, adata, device="cpu", expression=None):
+        self.data = Context.build(adata, expression=expression)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene
         self._vocab_len = len(self._word2id)

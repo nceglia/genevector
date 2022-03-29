@@ -287,7 +287,7 @@ class CompassDataset(Dataset):
                 self.correlation[gene][cgene] = value
                 if use_mi:
                     value = self.mi_scores[gene][cgene]
-                if thresh > 0.0 and coocc[wi,ci] > min_coexp: #self.mi_scores[gene][cgene]
+                if thresh > thresh: #and coocc[wi,ci] > min_coexp: #self.mi_scores[gene][cgene]
                     self._xij.append(value * coocc[wi,ci])
                 else:
                     self._xij.append(0.0)

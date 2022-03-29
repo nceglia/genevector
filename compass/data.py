@@ -216,12 +216,11 @@ def calculate_mi(e, gene1, gene2, bins=50, x_max=3, alpha=0.25):
 
 class CompassDataset(Dataset):
 
-    def __init__(self, adata, features=[], device="cpu"):
+    def __init__(self, adata, device="cpu", use_mi=False):
         self.data = Context.build(adata)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene
         self._vocab_len = len(self._word2id)
-        self.features = features
         self.device = device
 
     def generate_mi_scores_parallel(self,processes=10):
@@ -286,8 +285,10 @@ class CompassDataset(Dataset):
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
                 self.correlation[gene][cgene] = value
+                if self.use_mi:
+                    value = self.mi_scores[gene][cgene]
                 if value > 0.0: #and coocc[wi,ci] > 0: #self.mi_scores[gene][cgene]
-                    self._xij.append(self.mi_scores[gene][cgene] * coocc[wi,ci])
+                    self._xij.append(value * coocc[wi,ci])
                 else:
                     self._xij.append(0.0)
         if self.device == "cuda":

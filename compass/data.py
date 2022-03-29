@@ -245,7 +245,7 @@ class CompassDataset(Dataset):
                     mi_scores[gene][p[1]] = res
         self.mi_scores = mi_scores
 
-    def create_inputs_outputs(self, use_mi=False):
+    def create_inputs_outputs(self, use_mi=False, thresh=0.0, min_coexp=10):
         print("Generating Correlation matrix.")
         import pandas
 
@@ -287,7 +287,7 @@ class CompassDataset(Dataset):
                 self.correlation[gene][cgene] = value
                 if use_mi:
                     value = self.mi_scores[gene][cgene]
-                if value > 0.0: #and coocc[wi,ci] > 0: #self.mi_scores[gene][cgene]
+                if thresh > 0.0 and coocc[wi,ci] > min_coexp: #self.mi_scores[gene][cgene]
                     self._xij.append(value * coocc[wi,ci])
                 else:
                     self._xij.append(0.0)

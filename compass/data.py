@@ -179,12 +179,12 @@ def calculate_mi_parallel(payload):
     gene = payload[1]
     genes = payload[2]
     gene_profile = jdf.loc[gene]
-    if list(gene_profile > 0).count(True) < 50:
+    if list(gene_profile > 0).count(True) < 5:
         return mi_scores
     for other in genes:
         e = numpy.array([gene_profile,jdf.loc[other]]).T
         e = e[e.min(axis=1) > 0].astype(int)
-        if len(e[:,0]) != 0 or e.shape[0] > 20:
+        if len(e[:,0]) != 0 or e.shape[0] > 5:
             mi_scores[other] = calculate_mi(e, gene, other)
     print(gene)
     return mi_scores

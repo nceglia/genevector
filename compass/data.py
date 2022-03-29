@@ -212,8 +212,7 @@ def calculate_mi(e, gene1, gene2, bins=50, x_max=3, alpha=0.25):
     nzs = pxy > 0
     expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
     ppmi = max([expected_pmi,0])
-    wppmi = numpy.nan_to_num(ppmi) * e.shape[0]
-    return (wppmi/x_max)**alpha
+    return ppmi
 
 class CompassDataset(Dataset):
 
@@ -277,6 +276,8 @@ class CompassDataset(Dataset):
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
+        import collections
+        self.correlation = collections.defaultdict(dict)
 
         for gene, row in tqdm.tqdm(zip(all_genes, cov)):
             for cgene, value in zip(all_genes, row):
@@ -284,10 +285,11 @@ class CompassDataset(Dataset):
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                if value > 0.0:
-                    self._xij.append(value * coocc[wi,ci] + 1.0)
+                self.correlation[gene][cgene] = value
+                if value > 0.0: #and coocc[wi,ci] > 0: #self.mi_scores[gene][cgene]
+                    self._xij.append(value * coocc[wi,ci])
                 else:
-                    self._xij.append(1.0)
+                    self._xij.append(0.0)
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()

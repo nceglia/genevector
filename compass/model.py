@@ -15,22 +15,14 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.init import xavier_normal
 
-# def weight_func(x, x_max, alpha, device):
-#     wx = x
-#     return wx.to(device)
-def weight_func(x, x_max, alpha, device):
-    wx = (x/x_max)**alpha
-    wx = torch.min(wx, torch.ones_like(wx))
-    # if device == "cuda":
-    #     return wx.cuda()
-    # else:
-    return wx.to(device)
 
-def wmse_loss(weights, inputs, targets, device):
+def weight_func(x, x_max, alpha, device):
+    return torch.ones_like(x).to(device)
+
+def mse_loss(inputs, targets, device):
     loss = F.mse_loss(inputs, targets, reduction='none')
     if device == "cuda":
         loss = loss.cuda()
-    loss = weights * loss
     return torch.mean(loss).to(device)
 
 class CompassModel(nn.Module):
@@ -40,19 +32,13 @@ class CompassModel(nn.Module):
         super(CompassModel, self).__init__()
         self.wi = nn.Embedding(num_embeddings, embedding_dim)
         self.wj = nn.Embedding(num_embeddings, embedding_dim)
-        self.bi = nn.Embedding(num_embeddings, 1)
-        self.bj = nn.Embedding(num_embeddings, 1)
-        self.wi.weight.data.uniform_(-1, 1)
-        self.wj.weight.data.uniform_(-1, 1)
-        self.bi.weight.data.zero_()
-        self.bj.weight.data.zero_()
+        self.wi.weight.data.uniform_(-1., 1.)
+        self.wj.weight.data.uniform_(-1., 1.)
 
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)
         w_j = self.wj(j_indices)
-        b_i = self.bi(i_indices).squeeze()
-        b_j = self.bj(j_indices).squeeze()
-        x = torch.sum(w_i * w_j, dim=1) + b_i + b_j
+        x = torch.sum(w_i * w_j, dim=1)
         return x
 
     def save_embedding(self, id2word, file_name, layer):
@@ -67,7 +53,7 @@ class CompassModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class CompassTrainer(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, x_max=100, alpha=0.75, device="cpu"):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, device="cpu"):
         self.dataset = dataset
         self.dataset.create_inputs_outputs()
 
@@ -84,8 +70,6 @@ class CompassTrainer(object):
         elif self.device == "cuda":
             self.model.cuda()
         self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
-        self.x_max = x_max
-        self.alpha = alpha
 
     def train(self, epochs):
         n_batches = int(len(self.dataset._xij) / self.batch_size)
@@ -96,8 +80,7 @@ class CompassTrainer(object):
                 batch_i += 1
                 self.optimizer.zero_grad()
                 outputs = self.model(i_idx, j_idx)
-                weights_x = weight_func(x_ij, self.x_max, self.alpha, self.device)
-                loss = wmse_loss(weights_x, outputs, torch.log(x_ij), self.device)
+                loss = mse_loss(outputs, x_ij, self.device)
                 loss.backward()
                 self.optimizer.step()
                 loss_values.append(loss.item())

@@ -287,7 +287,7 @@ class CompassDataset(Dataset):
                 self._j_idx.append(ci)
                 self.correlation[gene][cgene] = value
                 if value > 0.0: #and coocc[wi,ci] > 0: #self.mi_scores[gene][cgene]
-                    self._xij.append(value * coocc[wi,ci])
+                    self._xij.append(self.mi_scores[gene][cgene] * coocc[wi,ci])
                 else:
                     self._xij.append(0.0)
         if self.device == "cuda":

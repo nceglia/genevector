@@ -177,7 +177,6 @@ class Context(object):
 
 def calculate_mi(px,py):
     pxy = numpy.outer(px, py)
-    print(pxy)
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]

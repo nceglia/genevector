@@ -195,6 +195,8 @@ def plot_nb(x1,px,counts1):
     plt.show()
 
 def fit_nb(x1):
+    import warnings
+    warnings.filterwarnings("ignore")
     X = numpy.ones_like(x1)
     res = sm.NegativeBinomial(x1,X).fit(start_params=[np.mean(x1),1],disp=0)
     p1 = 1/(1+np.exp(res.params[0])*res.params[1])

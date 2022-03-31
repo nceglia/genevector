@@ -202,7 +202,6 @@ def fit_nb(x1):
     n1 = np.exp(res.params[0]) * p1 / (1-p1)
     counts1 = list(sorted(set(x1)))
     px = nbinom.pmf(counts1,n1,p1)
-    plot_nb(x1,px,counts1)
     return px
 
 class CompassDataset(Dataset):

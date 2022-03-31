@@ -1,39 +1,39 @@
-import numpy as np
-import torch
-from torch.utils.data import Dataset
-from multiprocessing import Pool
-import scanpy as sc
-import numpy
-from scipy.sparse import csr_matrix, find
-import operator
-import itertools
-from itertools import permutations
-import argparse
-import tqdm
-import random
-import pickle
-import collections
-import sys
-import os
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.neighbors import KernelDensity
-import matplotlib.pyplot as plt
-from collections import Counter
-from scipy import stats
-import itertools
-from sklearn.linear_model import LinearRegression
-import gc
-import numpy as np
-import matplotlib.pyplot as plt
-import scipy
-import pandas
-from sklearn import feature_extraction
-from multiprocess import Pool
-import copy
-import pandas
-import numpy
-import numpy as np
-import tqdm
+    import numpy as np
+    import torch
+    from torch.utils.data import Dataset
+    from multiprocessing import Pool
+    import scanpy as sc
+    import numpy
+    from scipy.sparse import csr_matrix, find
+    import operator
+    import itertools
+    from itertools import permutations
+    import argparse
+    import tqdm
+    import random
+    import pickle
+    import collections
+    import sys
+    import os
+    from sklearn.preprocessing import MinMaxScaler
+    from sklearn.neighbors import KernelDensity
+    import matplotlib.pyplot as plt
+    from collections import Counter
+    from scipy import stats
+    import itertools
+    from sklearn.linear_model import LinearRegression
+    import gc
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import scipy
+    import pandas
+    from sklearn import feature_extraction
+    from multiprocess import Pool
+    import copy
+    import pandas
+    import numpy
+    import numpy as np
+    import tqdm
 
 class Context(object):
 
@@ -173,39 +173,9 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
-def calculate_mi_parallel(payload):
-    mi_scores = dict()
-    jdf = payload[0]
-    gene = payload[1]
-    genes = payload[2]
-    gene_profile = jdf.loc[gene]
-    if list(gene_profile > 0).count(True) < 3:
-        return mi_scores
-    for other in genes:
-        e = numpy.array([gene_profile,jdf.loc[other]]).T
-        e = e[e.min(axis=1) > 0].astype(int)
-        if len(e[:,0]) != 0 or e.shape[0] > 3:
-            mi_scores[other] = calculate_mi(e, gene, other)
-    print(gene)
-    return mi_scores
-
-def calculate_mi(e, gene1, gene2, bins=50, x_max=3, alpha=0.25):
-    xbins = []
-    ybins = []
-    for i in numpy.linspace(0,1,bins)[1:]:
-        x1 = int(np.quantile(e[:,0], i))
-        if x1 not in xbins:
-            xbins.append(x1)
-        y1 = int(np.quantile(e[:,1], i))
-        if y1 not in ybins:
-            ybins.append(y1)
-    if len(xbins) < 3 or len(ybins) < 3:
-        return 0.0
-    try:
-        hgram, xedges, yedges = numpy.histogram2d(e[:,0],e[:,1],bins=(xbins,ybins))
-    except Exception as e:
-        return 0.0
-    pxy = hgram / float(np.sum(hgram))
+def calculate_mi(px,py):
+    pxy = numpy.outer(px, py)
+    print(pxy)
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
@@ -213,6 +183,25 @@ def calculate_mi(e, gene1, gene2, bins=50, x_max=3, alpha=0.25):
     expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
     ppmi = max([expected_pmi,0])
     return ppmi
+
+def plot_nb(x1,px,counts1):
+    import seaborn as sns
+    fig, ax = plt.subplots(1,1,figsize=(4,4))
+    _ = sns.distplot(x1, kde = False, norm_hist=True, label='Real Values',ax=ax)
+    ax.plot(counts1, px, 'g-', lw=2, label='Fit NB')
+    leg = ax.legend()
+    plt.title('Real vs Fitted NB Distributions')
+    plt.show()
+
+def fit_nb(x1):
+    X = numpy.ones_like(x1)
+    res = sm.NegativeBinomial(x1,X).fit(start_params=[np.mean(x1),1],disp=0)
+    p1 = 1/(1+np.exp(res.params[0])*res.params[1])
+    n1 = np.exp(res.params[0]) * p1 / (1-p1)
+    counts1 = list(sorted(set(x1)))
+    px = nbinom.pmf(counts1,n1,p1)
+    plot_nb(x1,px,counts1)
+    return px
 
 class CompassDataset(Dataset):
 
@@ -223,31 +212,38 @@ class CompassDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
 
-    def generate_mi_scores_parallel(self,processes=10):
+    def generate_mi_scores(self):
         df = pandas.DataFrame.from_dict(self.data.expression)
-        df = df.fillna(0)
-        self.jdf = df
-        genes = self.jdf.index.tolist()
+        jdf = df.fillna(0)
+        genes = jdf.index.tolist()
         total_genes = genes
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         num_genes = len(genes)
-        payloads = []
-        while len(genes) > 0:
-            gene = genes.pop(0)
-            payload = (self.jdf, gene, copy.deepcopy(genes))
-            if len(payload) == 3:
-                payloads.append(payload)
-        with Pool(processes) as p:
-            results = p.map(calculate_mi_parallel, payloads)
-            for p, r in zip(payloads,results):
-                for gene, res in r.items():
-                    mi_scores[p[1]][gene] = res
-                    mi_scores[gene][p[1]] = res
+        nbs = dict()
+        import itertools
+        pairs = list(itertools.combinations(genes, 2))
+
+        print("Fitting NB for each gene.")
+        for gene in tqdm.tqdm(genes):
+            gene_profile = jdf.loc[gene]
+            gene_profile = gene_profile[gene_profile > 0]
+            if len(gene_profile) > 3:
+                nbs[gene] = fit_nb(gene_profile)
+
+        print("Computing PMI for each pair.")
+        for pair in tqdm.tqdm(pairs):
+            if pair[0] in nbs and pair[1] in nbs:
+                res = calculate_mi(nbs[pair[0]],nbs[pair[1]])
+                mi_scores[pair[0]][pair[1]] = res
+                mi_scores[pair[1]][pair[0]] = res
+
         self.mi_scores = mi_scores
 
     def create_inputs_outputs(self, use_mi=False, thresh=0.0, min_coexp=10):
         print("Generating Correlation matrix.")
         import pandas
+        if use_mi:
+            self.generate_mi_scores()
 
         from sklearn import feature_extraction
         vectorizer = feature_extraction.DictVectorizer(sparse=True)

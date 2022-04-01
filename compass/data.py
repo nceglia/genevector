@@ -181,7 +181,7 @@ def calculate_mi(hgram):
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
-    return max(np.sum(np.log(pxy[nzs] / px_py[nzs])),0)
+    return max(np.mean(np.log(pxy[nzs] / px_py[nzs])),0)
 
 def plot_nb(x1,px,counts1):
     import seaborn as sns

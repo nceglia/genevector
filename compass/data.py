@@ -237,7 +237,11 @@ class CompassDataset(Dataset):
             if pair[0] in nbs and pair[1] in nbs:
                 e1 = nbs[pair[0]]
                 e2 = nbs[pair[1]]
-                hgram, xedges, yedges = numpy.histogram2d(e1,e2)
+                e = numpy.array([e1,e2]).T
+                e = e[e.min(axis=1) > 0]
+                nb1 = e[:,0]
+                nb2 = e[:,1]
+                hgram, xedges, yedges = numpy.histogram2d(nb1,nb2)
                 res = calculate_mi(hgram)
                 mi_scores[pair[0]][pair[1]] = res
                 mi_scores[pair[1]][pair[0]] = res

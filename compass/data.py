@@ -181,7 +181,8 @@ def calculate_mi(hgram):
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
-    return max(np.mean(np.log(pxy[nzs] / px_py[nzs])),0)
+    #return max(np.sum(np.log(pxy[nzs] / px_py[nzs])),0)
+    return np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs]))
 
 def plot_nb(x1,px,counts1):
     import seaborn as sns
@@ -200,7 +201,8 @@ def fit_nb(x1):
     p1 = 1/(1+np.exp(res.params[0])*res.params[1])
     n1 = np.exp(res.params[0]) * p1 / (1-p1)
     counts1 = list(range(int(max(x1))))
-    vals = nbinom.rvs(n1, p1, size=50)
+    vals = nbinom.rvs(n1, p1, size=5000)
+    vals = vals - numpy.min(vals)
     return vals
 
 class CompassDataset(Dataset):

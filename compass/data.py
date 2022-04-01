@@ -175,15 +175,13 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
-def calculate_mi(px,py):
-    pxy = numpy.outer(px, py)
+def calculate_mi(hgram):
+    pxy = hgram / hgram.sum()
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
-    expected_pmi = np.mean(np.log(pxy[nzs] / px_py[nzs]))
-    ppmi = max([expected_pmi,0])
-    return ppmi
+    return max(np.sum(np.log(pxy[nzs] / px_py[nzs])),0)
 
 def plot_nb(x1,px,counts1):
     import seaborn as sns
@@ -198,12 +196,12 @@ def fit_nb(x1):
     import warnings
     warnings.filterwarnings("ignore")
     X = numpy.ones_like(x1)
-    res = sm.NegativeBinomial(x1,X).fit(start_params=[np.mean(x1),1],disp=0)
+    res = sm.NegativeBinomial(x1,X).fit(disp=0)
     p1 = 1/(1+np.exp(res.params[0])*res.params[1])
     n1 = np.exp(res.params[0]) * p1 / (1-p1)
-    counts1 = list(sorted(set(x1)))
-    px = nbinom.pmf(counts1,n1,p1)
-    return px
+    counts1 = list(range(int(max(x1))))
+    vals = nbinom.rvs(n1, p1, size=50)
+    return vals
 
 class CompassDataset(Dataset):
 
@@ -228,14 +226,19 @@ class CompassDataset(Dataset):
         print("Fitting NB for each gene.")
         for gene in tqdm.tqdm(genes):
             gene_profile = jdf.loc[gene]
-            gene_profile = gene_profile[gene_profile > 0]
-            if len(gene_profile) > 3:
+            try:
                 nbs[gene] = fit_nb(gene_profile)
+            except Exception:
+                continue
 
         print("Computing PMI for each pair.")
         for pair in tqdm.tqdm(pairs):
             if pair[0] in nbs and pair[1] in nbs:
-                res = calculate_mi(nbs[pair[0]],nbs[pair[1]])
+                e1 = nbs[pair[0]]
+                e2 = nbs[pair[1]]
+                e = numpy.array([e1.tolist(),e2.tolist()]).T
+                hgram, xedges, yedges = numpy.histogram2d(e[:,0],e[:,1,])
+                res = calculate_mi(e)
                 mi_scores[pair[0]][pair[1]] = res
                 mi_scores[pair[1]][pair[0]] = res
 

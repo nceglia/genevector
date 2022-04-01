@@ -181,8 +181,7 @@ def calculate_mi(hgram):
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
-    #return max(np.sum(np.log(pxy[nzs] / px_py[nzs])),0)
-    return np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs]))
+    return np.sum(np.log(pxy[nzs] / px_py[nzs]))
 
 def plot_nb(x1,px,counts1):
     import seaborn as sns
@@ -291,7 +290,7 @@ class CompassDataset(Dataset):
                 if use_mi:
                     value = self.mi_scores[gene][cgene]
                 if value > thresh: #and coocc[wi,ci] > min_coexp: #self.mi_scores[gene][cgene]
-                    self._xij.append(value * coocc[wi,ci])
+                    self._xij.append(value)
                 else:
                     self._xij.append(0.0)
         if self.device == "cuda":

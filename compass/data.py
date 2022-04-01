@@ -239,7 +239,7 @@ class CompassDataset(Dataset):
                 e2 = nbs[pair[1]]
                 e = numpy.array([e1.tolist(),e2.tolist()]).T
                 hgram, xedges, yedges = numpy.histogram2d(e[:,0],e[:,1,])
-                res = calculate_mi(e)
+                res = calculate_mi(hgram)
                 mi_scores[pair[0]][pair[1]] = res
                 mi_scores[pair[1]][pair[0]] = res
 

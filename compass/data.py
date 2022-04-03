@@ -175,33 +175,25 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
-def calculate_mi(hgram):
-    pxy = hgram / hgram.sum()
+def calculate_mi(px,py):
+    pxy = numpy.outer(px, py)
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
-    return np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs]))
-
-def plot_nb(x1,px,counts1):
-    import seaborn as sns
-    fig, ax = plt.subplots(1,1,figsize=(4,4))
-    _ = sns.distplot(x1, kde = False, norm_hist=True, label='Real Values',ax=ax)
-    ax.plot(counts1, px, 'g-', lw=2, label='Fit NB')
-    leg = ax.legend()
-    plt.title('Real vs Fitted NB Distributions')
-    plt.show()
+    return numpy.nan_to_num(np.mean(np.log(pxy[nzs] / px_py[nzs])))
 
 def fit_nb(x1):
+    x1 = [x for x in x1 if x != 0.0]
     import warnings
     warnings.filterwarnings("ignore")
     X = numpy.ones_like(x1)
     res = sm.NegativeBinomial(x1,X).fit(disp=0)
     p1 = 1/(1+np.exp(res.params[0])*res.params[1])
     n1 = np.exp(res.params[0]) * p1 / (1-p1)
-    counts1 = list(range(int(max(x1))))
-    vals = nbinom.rvs(n1, p1, size=5000)
-    vals = vals - numpy.min(vals)
+    mv = int(max(x1))
+    counts1 = numpy.linspace(0,mv,mv+1)
+    vals = nbinom.pmf(counts1, n1, p1)#,#nbinom.rvs(n1, p1, size=100000)
     return vals
 
 class CompassDataset(Dataset):
@@ -230,6 +222,7 @@ class CompassDataset(Dataset):
             try:
                 nbs[gene] = fit_nb(gene_profile)
             except Exception:
+                print(gene)
                 continue
 
         print("Computing PMI for each pair.")
@@ -237,12 +230,7 @@ class CompassDataset(Dataset):
             if pair[0] in nbs and pair[1] in nbs:
                 e1 = nbs[pair[0]]
                 e2 = nbs[pair[1]]
-                e = numpy.array([e1,e2]).T
-                e = e[e.min(axis=1) > 0]
-                nb1 = e[:,0]
-                nb2 = e[:,1]
-                hgram, xedges, yedges = numpy.histogram2d(nb1,nb2)
-                res = calculate_mi(hgram)
+                res = calculate_mi(e1,e2)
                 mi_scores[pair[0]][pair[1]] = res
                 mi_scores[pair[1]][pair[0]] = res
 

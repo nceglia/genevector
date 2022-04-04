@@ -176,14 +176,15 @@ class Context(object):
         return self.gene_frequency[gene] / len(self.cells)
 
 def calculate_mi(px,py):
-    pxy = numpy.outer(px, py)
+    pxy = numpy.outer(px,py)
+#     pxy = pxy / pxy.sum()
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
-    return numpy.nan_to_num(np.mean(np.log(pxy[nzs] / px_py[nzs])))
+    return np.mean(np.log(pxy[nzs] / px_py[nzs]))
 
-def fit_nb(x1):
+def fit_nb(x1,min_prob=0.00001):
     x1 = [x for x in x1 if x != 0.0]
     import warnings
     warnings.filterwarnings("ignore")
@@ -192,8 +193,9 @@ def fit_nb(x1):
     p1 = 1/(1+np.exp(res.params[0])*res.params[1])
     n1 = np.exp(res.params[0]) * p1 / (1-p1)
     mv = int(max(x1))
-    counts1 = numpy.linspace(0,mv,mv+1)
-    vals = nbinom.pmf(counts1, n1, p1)#,#nbinom.rvs(n1, p1, size=100000)
+    counts1 = list(range(1,mv+1,1))
+    vals = nbinom.pmf(counts1, n1, p1)
+    vals = [x for x in vals if x > min_prob]
     return vals
 
 class CompassDataset(Dataset):
@@ -221,8 +223,8 @@ class CompassDataset(Dataset):
             gene_profile = jdf.loc[gene]
             try:
                 nbs[gene] = fit_nb(gene_profile)
-            except Exception:
-                print(gene)
+            except Exception as e:
+                print(gene, e)
                 continue
 
         print("Computing PMI for each pair.")
@@ -273,6 +275,7 @@ class CompassDataset(Dataset):
 
         for gene, row in tqdm.tqdm(zip(all_genes, cov)):
             for cgene, value in zip(all_genes, row):
+                if gene == cgene: continue
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
@@ -280,8 +283,9 @@ class CompassDataset(Dataset):
                 self.correlation[gene][cgene] = value
                 if use_mi:
                     value = self.mi_scores[gene][cgene]
-                if value * coocc[wi,ci] > thresh: #and coocc[wi,ci] > min_coexp: #self.mi_scores[gene][cgene]
-                    self._xij.append(value * coocc[wi,ci])
+                value = value * coocc[wi,ci]
+                if not numpy.isnan(value) and value > thresh: #and coocc[wi,ci] > min_coexp: #self.mi_scores[gene][cgene]
+                    self._xij.append(value)
                 else:
                     self._xij.append(0.0)
         if self.device == "cuda":

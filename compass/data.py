@@ -187,13 +187,13 @@ def fit_nb(x1, bins=50, min_cells=5):
         x = int(np.quantile(x1, i))
         if x not in xbins:
             xbins.append(x)
-    binned = numpy.histogram(x1,xbins,density=False)
-    x1 = []
-    xbins = []
-    for x,y in zip(binned[0],binned[1]):
-        if x > min_cells:
-            xbins.append(int(y))
-            x1.append(x)
+    # binned = numpy.histogram(x1,xbins,density=False)
+    # x1 = []
+    # xbins = []
+    # for x,y in zip(binned[0],binned[1]):
+    #     if x > min_cells:
+    #         xbins.append(int(y))
+    #         x1.append(x)
     return x1, bins
 
 class CompassDataset(Dataset):
@@ -230,7 +230,7 @@ class CompassDataset(Dataset):
             if pair[0] in nbs and pair[1] in nbs:
                 e1, xbins = nbs[pair[0]]
                 e2, ybins = nbs[pair[1]]
-                res = calculate_mi(e1,e2, xbins, ybins)
+                res = calculate_mi(e1, e2, xbins, ybins)
                 mi_scores[pair[0]][pair[1]] = res
                 mi_scores[pair[1]][pair[0]] = res
 

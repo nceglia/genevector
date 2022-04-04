@@ -175,29 +175,25 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
-def calculate_mi(px,py):
-    pxy = numpy.outer(px,py)
-#     pxy = pxy / pxy.sum()
+def calculate_mi(x,y,xbins,ybins):
+    try:
+        hgram, xedges, yedges = numpy.histogram2d(x,y,bins=(xbins,ybins))
+    except Exception as e:
+        return 0.0
+    pxy = hgram / float(np.sum(hgram))
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
     return np.mean(np.log(pxy[nzs] / px_py[nzs]))
 
-def fit_nb(x1,min_prob=0.00001):
-    x1 = [x for x in x1 if x != 0.0]
-    import warnings
-    warnings.filterwarnings("ignore")
-    X = numpy.ones_like(x1)
-    res = sm.NegativeBinomial(x1,X).fit(disp=0)
-    p1 = 1/(1+np.exp(res.params[0])*res.params[1])
-    n1 = np.exp(res.params[0]) * p1 / (1-p1)
-    mv = int(max(x1))
-    counts1 = list(range(1,mv+1,1))
-    vals = nbinom.pmf(counts1, n1, p1)
-    vals = [x for x in vals if x > min_prob]
-    return vals
-
+def fit_nb(x1, bins=50):
+    xbins = []
+    for i in numpy.linspace(0,1,bins)[1:]:
+        x = int(np.quantile(x1, i))
+        if x not in xbins:
+            xbins.append(x)
+    return x1, bins
 class CompassDataset(Dataset):
 
     def __init__(self, adata, device="cpu", expression=None):
@@ -227,19 +223,19 @@ class CompassDataset(Dataset):
                 print(gene, e)
                 continue
 
-        print("Computing PMI for each pair.")
+        print("Computing MI for each pair.")
         for pair in tqdm.tqdm(pairs):
             if pair[0] in nbs and pair[1] in nbs:
-                e1 = nbs[pair[0]]
-                e2 = nbs[pair[1]]
-                res = calculate_mi(e1,e2)
+                e1, xbins = nbs[pair[0]]
+                e2, ybins = nbs[pair[1]]
+                res = calculate_mi(e1,e2, xbins, ybins)
                 mi_scores[pair[0]][pair[1]] = res
                 mi_scores[pair[1]][pair[0]] = res
 
         self.mi_scores = mi_scores
 
     def create_inputs_outputs(self, use_mi=False, thresh=0.0, min_coexp=10):
-        print("Generating Correlation matrix.")
+        print("Generating matrix.")
         import pandas
         if use_mi:
             self.generate_mi_scores()
@@ -284,7 +280,7 @@ class CompassDataset(Dataset):
                 if use_mi:
                     value = self.mi_scores[gene][cgene]
                 value = value * coocc[wi,ci]
-                if not numpy.isnan(value) and value > thresh: #and coocc[wi,ci] > min_coexp: #self.mi_scores[gene][cgene]
+                if not numpy.isnan(value) and value > thresh:
                     self._xij.append(value)
                 else:
                     self._xij.append(0.0)

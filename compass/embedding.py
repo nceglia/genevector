@@ -154,7 +154,7 @@ class GeneEmbedding(object):
             clusters[l].append(g)
         markers = dict()
         for cluster, genes in clusters.items():
-            if len(set(genes)) > 2 and len(set(genes)) < upper_bound:
+            if len(set(genes)) > 1 and len(set(genes)) < upper_bound:
                 markers["MG_{}".format(cluster)] = list(set(genes))
         self.cluster_definitions = markers
         return markers

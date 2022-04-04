@@ -166,12 +166,6 @@ class Context(object):
         serialized = self.serialize()
         pickle.dump(serialized, open(filename,"wb"))
 
-    def frequency_histogram(self):
-        f = np.array(list(self.gene_frequency.values())) / len(self.cells)
-        plt.hist(f, 200, density=True, facecolor='g', alpha=0.75)
-        plt.grid(True)
-        plt.show()
-
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
@@ -187,13 +181,21 @@ def calculate_mi(x,y,xbins,ybins):
     nzs = pxy > 0
     return np.mean(np.log(pxy[nzs] / px_py[nzs]))
 
-def fit_nb(x1, bins=50):
+def fit_nb(x1, bins=50, min_cells=5):
     xbins = []
     for i in numpy.linspace(0,1,bins)[1:]:
         x = int(np.quantile(x1, i))
         if x not in xbins:
             xbins.append(x)
+    binned = numpy.histogram(x1,xbins,density=False)
+    x1 = []
+    xbins = []
+    for x,y in zip(binned[0],binned[1]):
+        if x > min_cells:
+            xbins.append(int(y))
+            x1.append(x)
     return x1, bins
+
 class CompassDataset(Dataset):
 
     def __init__(self, adata, device="cpu", expression=None):

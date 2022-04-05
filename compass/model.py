@@ -53,10 +53,9 @@ class CompassModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class CompassTrainer(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, device="cpu", use_mi=False, min_coexp=10, thresh=0.0):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, device="cpu", use_mi=False):
         self.dataset = dataset
-        self.dataset.create_inputs_outputs(use_mi=use_mi, min_coexp=min_coexp, thresh=thresh)
-
+        self.dataset.create_inputs_outputs(use_mi=use_mi)
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension

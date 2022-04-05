@@ -188,16 +188,17 @@ def fit_nb(x1, bins=50):
         x = int(np.quantile(x1, i))
         if x not in xbins:
             xbins.append(x)
-    return x1, xbins
+    return xbins
 
 class CompassDataset(Dataset):
 
-    def __init__(self, adata, device="cpu", expression=None):
+    def __init__(self, adata, device="cpu", expression=None, min_coexpression=10):
         self.data = Context.build(adata, expression=expression)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene
         self._vocab_len = len(self._word2id)
         self.device = device
+        self.min_coexpression = min_coexpression
 
     def generate_mi_scores(self):
         df = pandas.DataFrame.from_dict(self.data.expression)
@@ -218,19 +219,22 @@ class CompassDataset(Dataset):
             except Exception as e:
                 print(gene, e)
                 continue
-
+        jdf = jdf.T
         print("Computing MI for each pair.")
         for pair in tqdm.tqdm(pairs):
             if pair[0] in nbs and pair[1] in nbs:
-                e1, xbins = nbs[pair[0]]
-                e2, ybins = nbs[pair[1]]
-                res = calculate_mi(e1, e2, xbins, ybins)
-                mi_scores[pair[0]][pair[1]] = res
-                mi_scores[pair[1]][pair[0]] = res
+                xbins = nbs[pair[0]]
+                ybins = nbs[pair[1]]
+                e = jdf[[pair[0],pair[1]]]
+                e = e[e.sum(axis=1) > 0]
+                if e.shape[0] > self.min_coexpression:
+                    res = calculate_mi(e[pair[0]].tolist(), e[pair[1]].tolist(), xbins, ybins)
+                    mi_scores[pair[0]][pair[1]] = res
+                    mi_scores[pair[1]][pair[0]] = res
 
         self.mi_scores = mi_scores
 
-    def create_inputs_outputs(self, use_mi=False, thresh=0.0, min_coexp=10):
+    def create_inputs_outputs(self, use_mi=False):
         print("Generating matrix.")
         import pandas
         if use_mi:

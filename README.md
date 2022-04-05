@@ -9,22 +9,29 @@ python3 setup.py install
 
 ### Loading scanpy datasets into Compass.
 ```
-from compass.data import Context, CompassDataset
-context = Context.build(adata)
-dataset = CompassDataset(context)
+from compass.data import CompassDataset
+from compass.model import CompassTrainer
+from compass.embedding import GeneEmbedding, CellEmbedding
+
+import scanpy as sc
+
+dataset = CompassDataset(adata, device="cuda")
 ```
 
 ### Training gene vectors.
 ```
-from compass.model import CompassTrainer
-cmps = CompassTrainer(dataset,output_file="genes.vec", batch_size=200)
+cmps = CompassTrainer(dataset,
+                      output_file="genes.vec",
+                      emb_dimension=100,
+                      batch_size=100000,
+                      initial_lr=0.05,
+                      device="cuda")
 cmps.train(10) # run for 10 iterations
 ```
 
 ### Loading results.
 ```
-from compass.embedding import GeneEmbedding, CellEmbedding
-gembed = GeneEmbedding("genes.vec", context)
+gembed = GeneEmbedding("gemes.vec", dataset, vector="average")
 cembed = CellEmbedding(context, gembed)
 ```
 
@@ -33,29 +40,26 @@ cembed = CellEmbedding(context, gembed)
 gembed.compute_similarities("CD8A")
 ```
 
-### Clustering gene vectors.
+### Batch Correct and Get Scanpy AnnData Object
 ```
-gene_clusters = gembed.cluster()
-```
-
-### Build gene t-SNE embedding and label some genes.
-```
-gembed.plot(gene_clusters,labels=["C1QC","C1QA","TYROBP"])
+cembed.batch_correct(column="sample")
+adata = cembed.get_adata(min_dist=0.1, n_neighbors=50)
 ```
 
-### Find most representative genes for each cluster based on cosine distance.
+### Find optimal cosine threshold and identify meta-genes.
 ```
-cluster_definitions = gembed.cluster_definitions(gene_clusters)
-```
-
-### Pandas data frame of most representative genes for each cluster.
-```
-gene_df = gembed.cluster_definitions_as_df(cluster_definitions,top_n=10)
+cosine_threshold = embed.select_cosine_threshold()
+metagenes = embed.identify_metagenes(cosine=cosine_threshold)
 ```
 
-### Relabel cluster in results.
+### Score metagenes over cells.
 ```
-gembed.relabel_cluster(cluster_definitions, gene_clusters, 6, "Cell Cycle")
+embed.score_metagenes(adata, metagenes)
+```
+
+### Generate heatmap of metagenes and scores over a set of conditions.
+```
+embed.plot_metagenes_scores(adata,metagenes,"condition")
 ```
 
 ### Generate an average vector for a set of genes.
@@ -63,45 +67,6 @@ gembed.relabel_cluster(cluster_definitions, gene_clusters, 6, "Cell Cycle")
 cd8tcellvec = gembed.generate_vector(["CD8A","CD8B","CD3D","CD3E","CD3G"])
 ```
 
-### Plot a cosine similarity matrix for a set of genes.
-```
-gembed.plot_similarity_matrix(["CD8A","CD8B","CD3D","CD3E","CD3G"], png="cd8_matrix.png")
-```
-
-### Plot a networkx graph of similarities between a set of genes.
-```
-plot_similarity_network(["CD8A","CD8B","CD3D","CD3E","CD3G"], png="cd8_graph.png"
-```
-
-### Build cell t-SNE embedding with cell type labels.
-```
-tsne_embedding = cembed.plot(column="cell_type")
-```
-
-### Reuse t-SNE embedding and plot another label.
-```
-cembed.plot(column="batch_label",pcs=tsne_embedding)
-```
-
-### Find K cell clusters.
-```
-clusters = cembed.cluster(k=6)
-```
-
-### Locally batch correct on clusters using column as batch label.
-```
-cembed.batch_correct(column="batch_label",clusters=clusters)
-```
-
-### Regenerate corrected t-SNE
-```
-corrected_tsne_embedding = cembed.plot(column="batchlb")
-```
-
-### Plot cosine distance for each cell to a given vector.
-```
-cembed.plot_distance(cd8tcellvec,png="highlightcd8cells.png")
-```
 
 
 

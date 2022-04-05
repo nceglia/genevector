@@ -173,6 +173,7 @@ def calculate_mi(x,y,xbins,ybins):
     try:
         hgram, xedges, yedges = numpy.histogram2d(x,y,bins=(xbins,ybins))
     except Exception as e:
+        print(e)
         return 0.0
     pxy = hgram / float(np.sum(hgram))
     px = np.sum(pxy, axis=1)
@@ -181,20 +182,13 @@ def calculate_mi(x,y,xbins,ybins):
     nzs = pxy > 0
     return np.mean(np.log(pxy[nzs] / px_py[nzs]))
 
-def fit_nb(x1, bins=30, min_cells=10):
+def fit_nb(x1, bins=50):
     xbins = []
     for i in numpy.linspace(0,1,bins)[1:]:
         x = int(np.quantile(x1, i))
         if x not in xbins:
             xbins.append(x)
-    binned = numpy.histogram(x1,xbins,density=False)
-    x1 = []
-    xbins = []
-    for x,y in zip(binned[0],binned[1]):
-        if x > min_cells:
-            xbins.append(int(y))
-            x1.append(x)
-    return x1, bins
+    return x1, xbins
 
 class CompassDataset(Dataset):
 
@@ -216,7 +210,7 @@ class CompassDataset(Dataset):
         import itertools
         pairs = list(itertools.combinations(genes, 2))
 
-        print("Fitting NB for each gene.")
+        print("Loading Gene Profiles.")
         for gene in tqdm.tqdm(genes):
             gene_profile = jdf.loc[gene]
             try:
@@ -282,8 +276,8 @@ class CompassDataset(Dataset):
                 if use_mi:
                     value = self.mi_scores[gene][cgene]
                 value = value * coocc[wi,ci]
-                if not numpy.isnan(value) and value > thresh:
-                    self._xij.append(value)
+                if coocc[wi,ci] > 0 and value > 0:
+                    self._xij.append(value*coocc[wi,ci])
                 else:
                     self._xij.append(0.0)
         if self.device == "cuda":

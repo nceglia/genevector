@@ -170,11 +170,13 @@ class Context(object):
         return self.gene_frequency[gene] / len(self.cells)
 
 def calculate_mi(x,y,xbins,ybins):
-    try:
-        hgram, xedges, yedges = numpy.histogram2d(x,y,bins=(xbins,ybins))
-    except Exception as e:
-        print(e)
-        return 0.0
+    x = numpy.array(x)
+    y = numpy.array(y)
+    b = x+y > 0
+    x = x[b]
+    y = y[b]
+    hgram, xedges, yedges = numpy.histogram2d(x,y,bins=(xbins,ybins),
+                                              range=[[1,max(xbins)],[1,max(ybins)]])
     pxy = hgram / float(np.sum(hgram))
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
@@ -219,18 +221,15 @@ class CompassDataset(Dataset):
             except Exception as e:
                 print(gene, e)
                 continue
-        jdf = jdf.T
+
         print("Computing MI for each pair.")
         for pair in tqdm.tqdm(pairs):
             if pair[0] in nbs and pair[1] in nbs:
-                xbins = nbs[pair[0]]
-                ybins = nbs[pair[1]]
-                e = jdf[[pair[0],pair[1]]]
-                e = e[e.sum(axis=1) > 0]
-                if e.shape[0] > self.min_coexpression:
-                    res = calculate_mi(e[pair[0]].tolist(), e[pair[1]].tolist(), xbins, ybins)
-                    mi_scores[pair[0]][pair[1]] = res
-                    mi_scores[pair[1]][pair[0]] = res
+                x1, xbins = nbs[pair[0]]
+                x2, ybins = nbs[pair[1]]
+                res = calculate_mi(x1,x2, xbins, ybins)
+                mi_scores[pair[0]][pair[1]] = res
+                mi_scores[pair[1]][pair[0]] = res
 
         self.mi_scores = mi_scores
 

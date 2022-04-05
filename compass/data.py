@@ -170,19 +170,13 @@ class Context(object):
         return self.gene_frequency[gene] / len(self.cells)
 
 def calculate_mi(x,y,xbins,ybins):
-    x = numpy.array(x)
-    y = numpy.array(y)
-    b = x+y > 0
-    x = x[b]
-    y = y[b]
-    hgram, xedges, yedges = numpy.histogram2d(x,y,bins=(xbins,ybins),
-                                              range=[[1,max(xbins)],[1,max(ybins)]])
+    hgram, xedges, yedges = numpy.histogram2d(x,y,bins=(xbins,ybins),range=[[1,max(xbins)],[1,max(ybins)]])
     pxy = hgram / float(np.sum(hgram))
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
-    return np.mean(np.log(pxy[nzs] / px_py[nzs]))
+    return np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs]))
 
 def fit_nb(x1, bins=50):
     xbins = []

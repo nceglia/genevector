@@ -190,7 +190,7 @@ def fit_nb(x1, bins=50):
         x = int(np.quantile(x1, i))
         if x not in xbins:
             xbins.append(x)
-    return xbins
+    return x1, xbins
 
 class CompassDataset(Dataset):
 

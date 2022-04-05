@@ -353,8 +353,9 @@ class CellEmbedding(object):
             cell_genes = []
             weights = []
             for g,w in cell_weights.items():
-                cell_genes.append(g)
-                weights.append(w)
+                if w != 0.0:
+                    cell_genes.append(g)
+                    weights.append(w)
             weights = numpy.array(weights)
             scaler = MinMaxScaler()
             scaled_weights = scaler.fit_transform(numpy.array(weights).reshape(-1,1))

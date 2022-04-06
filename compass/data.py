@@ -169,32 +169,22 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
-def calculate_mi(x,y,xbins,ybins):
-    hgram, xedges, yedges = numpy.histogram2d(x,y,bins=(xbins,ybins),range=[[1,max(xbins)],[1,max(ybins)]])
-    pxy = hgram / float(np.sum(hgram))
+def calculate_mi(x,y):
+    pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
     px = np.sum(pxy, axis=1)
     py = np.sum(pxy, axis=0)
     px_py = px[:, None] * py[None, :]
     nzs = pxy > 0
     return np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs]))
 
-def fit_nb(x1, bins=50):
-    xbins = []
-    for i in numpy.linspace(0,1,bins)[1:]:
-        x = int(np.quantile(x1, i))
-        if x not in xbins:
-            xbins.append(x)
-    return x1, xbins
-
 class CompassDataset(Dataset):
 
-    def __init__(self, adata, device="cpu", expression=None, min_coexpression=10):
+    def __init__(self, adata, device="cpu", expression=None):
         self.data = Context.build(adata, expression=expression)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene
         self._vocab_len = len(self._word2id)
         self.device = device
-        self.min_coexpression = min_coexpression
 
     def generate_mi_scores(self):
         df = pandas.DataFrame.from_dict(self.data.expression)
@@ -206,32 +196,33 @@ class CompassDataset(Dataset):
         nbs = dict()
         import itertools
         pairs = list(itertools.combinations(genes, 2))
-
-        print("Loading Gene Profiles.")
-        for gene in tqdm.tqdm(genes):
-            gene_profile = jdf.loc[gene]
-            try:
-                nbs[gene] = fit_nb(gene_profile)
-            except Exception as e:
-                print(gene, e)
-                continue
-
+        print(len(pairs))
         print("Computing MI for each pair.")
+        series = dict()
+        for gene in genes:
+            series[gene] = np.array(jdf.loc[gene])
         for pair in tqdm.tqdm(pairs):
-            if pair[0] in nbs and pair[1] in nbs:
-                x1, xbins = nbs[pair[0]]
-                x2, ybins = nbs[pair[1]]
-                res = calculate_mi(x1,x2, xbins, ybins)
-                mi_scores[pair[0]][pair[1]] = res
-                mi_scores[pair[1]][pair[0]] = res
-
+            x = series[pair[0]]
+            y = series[pair[1]]
+            pxy, xedges, yedges = numpy.histogram2d(x,y)
+            pxy = pxy / pxy.sum()
+            px = np.sum(pxy, axis=1)
+            py = np.sum(pxy, axis=0)
+            px_py = px[:, None] * py[None, :]
+            nzs = pxy > 0
+            mi = np.sum(pxy[nzs] * np.log2(pxy[nzs] / px_py[nzs]))
+            mi_scores[pair[0]][pair[1]] = mi
+            mi_scores[pair[1]][pair[0]] = mi
         self.mi_scores = mi_scores
 
-    def create_inputs_outputs(self, use_mi=False):
+    def create_inputs_outputs(self, use_mi=False, distance=None):
         print("Generating matrix.")
         import pandas
-        if use_mi:
+        if use_mi and distance == None:
             self.generate_mi_scores()
+
+        if distance != None:
+            self.mi_scores = distance
 
         from sklearn import feature_extraction
         vectorizer = feature_extraction.DictVectorizer(sparse=True)
@@ -247,7 +238,6 @@ class CompassDataset(Dataset):
         self.data.expressed_genes = all_genes
 
         corr_matrix = pandas.DataFrame(data=corr_matrix.todense(),columns=all_genes)
-        corr_matrix = corr_matrix[all_genes]
         corr_df = corr_matrix
 
         print("Decomposing")
@@ -273,8 +263,8 @@ class CompassDataset(Dataset):
                 if use_mi:
                     value = self.mi_scores[gene][cgene]
                 value = value * coocc[wi,ci]
-                if coocc[wi,ci] > 0 and value > 0:
-                    self._xij.append(value*coocc[wi,ci])
+                if value > 0:
+                    self._xij.append(value)
                 else:
                     self._xij.append(0.0)
         if self.device == "cuda":

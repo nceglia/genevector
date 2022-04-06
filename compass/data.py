@@ -264,7 +264,7 @@ class CompassDataset(Dataset):
                     value = self.mi_scores[gene][cgene]
                 value = value * coocc[wi,ci]
                 if value > 0:
-                    self._xij.append(value)
+                    self._xij.append(numpy.log2(value))
                 else:
                     self._xij.append(0.0)
         if self.device == "cuda":

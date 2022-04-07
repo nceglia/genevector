@@ -12,29 +12,29 @@ python3 setup.py install
 
 ### Loading scanpy datasets into GeneVector.
 ```
-from compass.data import CompassDataset
-from compass.model import CompassTrainer
-from compass.embedding import GeneEmbedding, CellEmbedding
+from genevector.data import GeneVectorDataset
+from genevector.model import GeneVectorTrainer
+from genevector.embedding import GeneEmbedding, CellEmbedding
 
 import scanpy as sc
 
-dataset = CompassDataset(adata, device="cuda")
+dataset = GeneVectorDataset(adata, device="cuda")
 ```
 
 ### Training gene vectors.
 ```
-cmps = CompassTrainer(dataset,
-                      output_file="genes.vec",
-                      emb_dimension=100,
-                      batch_size=100000,
-                      initial_lr=0.05,
-                      device="cuda")
-cmps.train(10) # run for 10 iterations
+cmps = GeneVector(dataset,
+                  output_file="genes.vec",
+                  emb_dimension=100,
+                  batch_size=100000,
+                  initial_lr=0.05,
+                  device="cuda")
+cmps.train(200) # run for 10 iterations
 ```
 
 ### Loading results.
 ```
-gembed = GeneEmbedding("gemes.vec", dataset, vector="average")
+gembed = GeneEmbedding("genes.vec", dataset, vector="average")
 cembed = CellEmbedding(context, gembed)
 ```
 

@@ -10,7 +10,7 @@ python3 -m venv cenv
 python3 setup.py install
 ```
 
-### Loading scanpy datasets into Compass.
+### Loading scanpy datasets into GeneVector.
 ```
 from compass.data import CompassDataset
 from compass.model import CompassTrainer

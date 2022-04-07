@@ -10,7 +10,7 @@ python3 -m venv cenv
 python3 setup.py install
 ```
 
-### Loading scanpy datasets into GeneVector.
+### Loading scanpy dataset into GeneVector.
 ```
 from genevector.data import GeneVectorDataset
 from genevector.model import GeneVectorTrainer

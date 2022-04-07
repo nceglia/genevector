@@ -7,6 +7,7 @@ Vector representations of gene co-expression in single cell RNAseq.
 ### Install:
 ```
 python3 -m venv gvenv
+source gvenv/bin/activate
 python3 setup.py install
 ```
 

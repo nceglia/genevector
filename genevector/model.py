@@ -17,7 +17,9 @@ from torch.nn.init import xavier_normal
 
 
 def weight_func(x, x_max, alpha, device):
-    return torch.ones_like(x).to(device)
+    wx = (x/x_max)**alpha
+    wx = torch.min(wx, torch.ones_like(wx))
+    return wx.to(device)
 
 def mse_loss(inputs, targets, device):
     loss = F.mse_loss(inputs, targets, reduction='none')
@@ -53,7 +55,7 @@ class GeneVectorModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, device="cpu", use_mi=False, distance=None):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, device="cpu", use_mi=False, distance=None, x_max=100, alpha=0.75):
         self.dataset = dataset
         self.dataset.create_inputs_outputs(use_mi=use_mi, distance=distance)
         self.output_file_name = output_file
@@ -69,6 +71,8 @@ class GeneVector(object):
         elif self.device == "cuda":
             self.model.cuda()
         self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
+        self.x_max = x_max
+        self.alpha = alpha
 
     def train(self, epochs):
         n_batches = int(len(self.dataset._xij) / self.batch_size)

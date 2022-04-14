@@ -215,7 +215,7 @@ class GeneVectorDataset(Dataset):
             mi_scores[pair[1]][pair[0]] = mi
         self.mi_scores = mi_scores
 
-    def create_inputs_outputs(self, use_mi=False, distance=None):
+    def create_inputs_outputs(self, use_mi=False, distance=None, offset=0.1):
         print("Generating matrix.")
         import pandas
         if use_mi and distance == None:
@@ -261,9 +261,12 @@ class GeneVectorDataset(Dataset):
                 self._j_idx.append(ci)
                 self.correlation[gene][cgene] = value
                 if use_mi:
-                    value = self.mi_scores[gene][cgene] + 0.5
+                    value = self.mi_scores[gene][cgene]
                 value = value * coocc[wi,ci]
-                self._xij.append(value)
+                if value > 0:
+                    self._xij.append(1. + value)
+                else:
+                    self._xij.append(1.)
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()

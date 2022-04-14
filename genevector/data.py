@@ -210,7 +210,7 @@ class GeneVectorDataset(Dataset):
             py = np.sum(pxy, axis=0)
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
-            mi = np.sum(pxy[nzs] * np.log2(pxy[nzs] / px_py[nzs]))
+            mi = np.sum(np.log2(pxy[nzs] / px_py[nzs]))
             mi_scores[pair[0]][pair[1]] = mi
             mi_scores[pair[1]][pair[0]] = mi
         self.mi_scores = mi_scores
@@ -261,12 +261,9 @@ class GeneVectorDataset(Dataset):
                 self._j_idx.append(ci)
                 self.correlation[gene][cgene] = value
                 if use_mi:
-                    value = self.mi_scores[gene][cgene]
+                    value = self.mi_scores[gene][cgene] + 0.5
                 value = value * coocc[wi,ci]
-                if value > 0:
-                    self._xij.append(value)
-                else:
-                    self._xij.append(0.0)
+                self._xij.append(value)
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()

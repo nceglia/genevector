@@ -261,8 +261,8 @@ class GeneVectorDataset(Dataset):
                 self._j_idx.append(ci)
                 self.correlation[gene][cgene] = value
                 if use_mi:
-                    value = self.mi_scores[gene][cgene] + 0.5
-                value = value * coocc[wi,ci]
+                    value = self.mi_scores[gene][cgene]
+                value = value * numpy.log2(coocc[wi,ci])
                 self._xij.append(value)
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()

@@ -15,19 +15,10 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.init import xavier_normal
 
-def weight_func(x, x_max, alpha, device):
-    wx = (x/x_max)**alpha
-    wx = torch.min(wx, torch.ones_like(wx))
-    # if device == "cuda":
-    #     return wx.cuda()
-    # else:
-    return wx.to(device)
-
-def wmse_loss(weights, inputs, targets, device):
+def mse_loss(inputs, targets, device):
     loss = F.mse_loss(inputs, targets, reduction='none')
     if device == "cuda":
         loss = loss.cuda()
-    loss = weights * loss
     return torch.mean(loss).to(device)
 
 
@@ -87,8 +78,7 @@ class GeneVector(object):
                 batch_i += 1
                 self.optimizer.zero_grad()
                 outputs = self.model(i_idx, j_idx)
-                weights_x = weight_func(x_ij, self.x_max, self.alpha, self.device)
-                loss = wmse_loss(weights_x, outputs, torch.log(x_ij), self.device)
+                loss = mse_loss(outputs, x_ij, self.device)
                 loss.backward()
                 self.optimizer.step()
                 loss_values.append(loss.item())

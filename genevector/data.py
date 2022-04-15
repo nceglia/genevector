@@ -204,7 +204,7 @@ class GeneVectorDataset(Dataset):
         for pair in tqdm.tqdm(pairs):
             x = series[pair[0]]
             y = series[pair[1]]
-            pxy, xedges, yedges = numpy.histogram2d(x,y)
+            pxy, xedges, yedges = numpy.histogram2d(x,y,bins=10)
             pxy = pxy / pxy.sum()
             px = np.sum(pxy, axis=1)
             py = np.sum(pxy, axis=0)
@@ -264,9 +264,9 @@ class GeneVectorDataset(Dataset):
                     value = self.mi_scores[gene][cgene]
                 value = value * coocc[wi,ci]
                 if value > 0:
-                    self._xij.append(1. + value)
+                    self._xij.append(value)
                 else:
-                    self._xij.append(1.)
+                    self._xij.append(0.)
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()

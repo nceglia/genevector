@@ -50,9 +50,10 @@ class GeneVectorModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, device="cpu", use_mi=False, distance=None, x_max=100, alpha=0.75):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, device="cpu", use_mi=True, distance=None, bins=30):
         self.dataset = dataset
-        self.dataset.create_inputs_outputs(use_mi=use_mi, distance=distance)
+        self.bins = bins
+        self.dataset.create_inputs_outputs(use_mi=use_mi, distance=distance, bins=bins)
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension
@@ -66,8 +67,7 @@ class GeneVector(object):
         elif self.device == "cuda":
             self.model.cuda()
         self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
-        self.x_max = x_max
-        self.alpha = alpha
+
 
     def train(self, epochs):
         n_batches = int(len(self.dataset._xij) / self.batch_size)

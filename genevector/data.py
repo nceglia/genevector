@@ -186,7 +186,9 @@ class GeneVectorDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
 
-    def generate_mi_scores(self):
+    def generate_mi_scores(self,distance=None):
+        if distance == None:
+            distance = dict()
         df = pandas.DataFrame.from_dict(self.data.expression)
         jdf = df.fillna(0)
         genes = jdf.index.tolist()
@@ -202,27 +204,35 @@ class GeneVectorDataset(Dataset):
         for gene in genes:
             series[gene] = np.array(jdf.loc[gene])
         for pair in tqdm.tqdm(pairs):
-            x = series[pair[0]]
-            y = series[pair[1]]
-            pxy, xedges, yedges = numpy.histogram2d(x,y,bins=10)
-            pxy = pxy / pxy.sum()
-            px = np.sum(pxy, axis=1)
-            py = np.sum(pxy, axis=0)
-            px_py = px[:, None] * py[None, :]
-            nzs = pxy > 0
-            mi = np.sum(np.log2(pxy[nzs] / px_py[nzs]))
-            mi_scores[pair[0]][pair[1]] = mi
-            mi_scores[pair[1]][pair[0]] = mi
+            if pair[0] in distance and pair[1] in distance[pair[0]]:
+                mi_scores[pair[0]][pair[1]] = distance[pair[0]][pair[1]]
+                mi_scores[pair[1]][pair[0]] = distance[pair[0]][pair[1]]
+            else:
+                x = series[pair[0]]
+                y = series[pair[1]]
+                # xbins = []
+                # ybins = []
+                # for i in numpy.linspace(0,1,30)[1:]:
+                #     xbins.append(int(np.quantile(x, i)))
+                #     ybins.append(int(np.quantile(y, i)))
+                # xbins = list(sorted(set(xbins)))
+                # ybins = list(sorted(set(ybins)))
+                # pxy, x, y = numpy.histogram2d(x,y,bins=(xbins,ybins),density=True)
+                pxy, xedges, yedges = numpy.histogram2d(x,y,bins=30,density=True)
+                px = np.sum(pxy, axis=1)
+                py = np.sum(pxy, axis=0)
+                px_py = px[:, None] * py[None, :]
+                nzs = pxy > 0
+                mi = np.sum(np.log2(pxy[nzs] / px_py[nzs]))
+                mi_scores[pair[0]][pair[1]] = mi
+                mi_scores[pair[1]][pair[0]] = mi
         self.mi_scores = mi_scores
 
-    def create_inputs_outputs(self, use_mi=False, distance=None, offset=0.1):
+    def create_inputs_outputs(self, use_mi=True, distance=None, bins=30):
         print("Generating matrix.")
         import pandas
-        if use_mi and distance == None:
-            self.generate_mi_scores()
-
-        if distance != None:
-            self.mi_scores = distance
+        if use_mi:
+            self.generate_mi_scores(distance=distance)
 
         from sklearn import feature_extraction
         vectorizer = feature_extraction.DictVectorizer(sparse=True)
@@ -264,7 +274,7 @@ class GeneVectorDataset(Dataset):
                     value = self.mi_scores[gene][cgene]
                 value = value * coocc[wi,ci]
                 if value > 0:
-                    self._xij.append(value)
+                    self._xij.append(self.mi_scores[gene][cgene])
                 else:
                     self._xij.append(0.)
         if self.device == "cuda":

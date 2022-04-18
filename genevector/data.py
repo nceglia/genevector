@@ -210,12 +210,12 @@ class GeneVectorDataset(Dataset):
                 # xbins = list(sorted(set(xbins)))
                 # ybins = list(sorted(set(ybins)))
                 # pxy, x, y = numpy.histogram2d(x,y,bins=(xbins,ybins),density=True)
-                pxy, xedges, yedges = numpy.histogram2d(x,y,bins=50,density=True)
+                pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
                 px = np.sum(pxy, axis=1)
                 py = np.sum(pxy, axis=0)
                 px_py = px[:, None] * py[None, :]
                 nzs = pxy > 0
-                mi = np.sum(np.log2(pxy[nzs] / px_py[nzs]))
+                mi = np.sum(pxy[nzs] * np.log2(pxy[nzs] / px_py[nzs]))
                 mi_scores[pair[0]][pair[1]] = mi
                 mi_scores[pair[1]][pair[0]] = mi
         self.mi_scores = mi_scores
@@ -264,7 +264,7 @@ class GeneVectorDataset(Dataset):
                 self.correlation[gene][cgene] = value
                 if use_mi:
                     value = self.mi_scores[gene][cgene]
-                value = value * coocc[wi,ci]
+                value = value * (self.coocc[wi,ci]/len(self.data.cells))
                 if value > 0:
                     self._xij.append(self.mi_scores[gene][cgene])
                 else:

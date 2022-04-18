@@ -220,7 +220,7 @@ class GeneVectorDataset(Dataset):
                 mi_scores[pair[1]][pair[0]] = mi
         self.mi_scores = mi_scores
 
-    def create_inputs_outputs(self, use_mi=True, distance=None, bins=30):
+    def create_inputs_outputs(self, use_mi=True, distance=None, scale=100.0):
         print("Generating matrix.")
         import pandas
         if use_mi:

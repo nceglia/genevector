@@ -169,14 +169,6 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
-def calculate_mi(x,y):
-    pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
-    px = np.sum(pxy, axis=1)
-    py = np.sum(pxy, axis=0)
-    px_py = px[:, None] * py[None, :]
-    nzs = pxy > 0
-    return np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs]))
-
 class GeneVectorDataset(Dataset):
 
     def __init__(self, adata, device="cpu", expression=None):
@@ -218,7 +210,7 @@ class GeneVectorDataset(Dataset):
                 # xbins = list(sorted(set(xbins)))
                 # ybins = list(sorted(set(ybins)))
                 # pxy, x, y = numpy.histogram2d(x,y,bins=(xbins,ybins),density=True)
-                pxy, xedges, yedges = numpy.histogram2d(x,y,bins=30,density=True)
+                pxy, xedges, yedges = numpy.histogram2d(x,y,bins=50,density=True)
                 px = np.sum(pxy, axis=1)
                 py = np.sum(pxy, axis=0)
                 px_py = px[:, None] * py[None, :]

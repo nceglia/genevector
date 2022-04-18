@@ -264,7 +264,7 @@ class GeneVectorDataset(Dataset):
                 self.correlation[gene][cgene] = value
                 if use_mi:
                     value = self.mi_scores[gene][cgene]
-                value = value * (coocc[wi,ci]/len(self.data.cells)) * 100.0
+                value = value * (coocc[wi,ci]/len(self.data.cells)) * scale
                 if value > 0:
                     self._xij.append(value)
                 else:

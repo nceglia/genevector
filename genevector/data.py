@@ -202,15 +202,8 @@ class GeneVectorDataset(Dataset):
             else:
                 x = series[pair[0]]
                 y = series[pair[1]]
-                # xbins = []
-                # ybins = []
-                # for i in numpy.linspace(0,1,30)[1:]:
-                #     xbins.append(int(np.quantile(x, i)))
-                #     ybins.append(int(np.quantile(y, i)))
-                # xbins = list(sorted(set(xbins)))
-                # ybins = list(sorted(set(ybins)))
-                # pxy, x, y = numpy.histogram2d(x,y,bins=(xbins,ybins),density=True)
-                pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
+                pxy, xedges, yedges = numpy.histogram2d(x,y,nbins=10)
+                pxy /= pxy.sum()
                 px = np.sum(pxy, axis=1)
                 py = np.sum(pxy, axis=0)
                 px_py = px[:, None] * py[None, :]

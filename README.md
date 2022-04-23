@@ -30,7 +30,7 @@ cmps = GeneVector(dataset,
                   batch_size=100000,
                   initial_lr=0.05,
                   device="cuda")
-cmps.train(200) # run for 10 iterations
+cmps.train(200) # run for 200 iterations
 ```
 
 ### Loading results.

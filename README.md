@@ -1,7 +1,7 @@
 # GeneVector
 Vector representations of gene co-expression in single cell RNAseq.
 
-![alt text](https://github.com/nceglia/genevector/blob/main/data/framework.png?raw=true)
+![alt text](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true)
 
 
 ### Install:

@@ -196,21 +196,16 @@ class GeneVectorDataset(Dataset):
         for gene in genes:
             series[gene] = np.array(jdf.loc[gene])
         for pair in tqdm.tqdm(pairs):
-            if pair[0] in distance and pair[1] in distance[pair[0]]:
-                mi_scores[pair[0]][pair[1]] = distance[pair[0]][pair[1]]
-                mi_scores[pair[1]][pair[0]] = distance[pair[0]][pair[1]]
-            else:
-                x = series[pair[0]]
-                y = series[pair[1]]
-                pxy, xedges, yedges = numpy.histogram2d(x,y,bins=10)
-                pxy /= pxy.sum()
-                px = np.sum(pxy, axis=1)
-                py = np.sum(pxy, axis=0)
-                px_py = px[:, None] * py[None, :]
-                nzs = pxy > 0
-                mi = np.sum(pxy[nzs] * np.log2(pxy[nzs] / px_py[nzs]))
-                mi_scores[pair[0]][pair[1]] = mi
-                mi_scores[pair[1]][pair[0]] = mi
+            x = series[pair[0]]
+            y = series[pair[1]]
+            pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
+            px = np.sum(pxy, axis=1)
+            py = np.sum(pxy, axis=0)
+            px_py = px[:, None] * py[None, :]
+            nzs = pxy > 0
+            mi = np.sum(pxy[nzs] * np.log2(pxy[nzs] / px_py[nzs]))
+            mi_scores[pair[0]][pair[1]] = mi
+            mi_scores[pair[1]][pair[0]] = mi
         self.mi_scores = mi_scores
 
     def create_inputs_outputs(self, use_mi=True, distance=None, scale=100.0):

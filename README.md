@@ -1,8 +1,9 @@
-# GeneVector
-Vector representations of gene co-expression in single cell RNAseq.
+![alt text](https://github.com/nceglia/genevector/blob/main/logo.png?raw=true)
+## Vector representations of gene co-expression in single cell RNAseq.
 
 ![alt text](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true)
 
+https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
 
 ### Install:
 ```

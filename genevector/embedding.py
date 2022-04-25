@@ -101,6 +101,17 @@ class GeneEmbedding(object):
             embedding[gene] = [float(x) for x in vector]
         return embedding
 
+    def get_adata(self, resolution=20):
+        mat = numpy.array(self.vector)
+        numpy.savetxt(".tmp.txt",mat)
+        gdata = sc.read_text(".tmp.txt")
+        os.remove(".tmp.txt")
+        gdata.obs.index = embed.genes
+        sc.pp.neighbors(gdata,use_rep="X")
+        sc.tl.leiden(gdata,resolution=resolution)
+        sc.tl.umap(gdata)
+        return gdata
+
     def plot_metagenes_scores(self, adata, metagenes, column, plot=None):
         similarity_matrix = []
         plt.figure(figsize = (5, 13))
@@ -142,22 +153,11 @@ class GeneEmbedding(object):
             scores = list(scores.reshape(1,-1))[0]
             adata.obs[str(p)+"_SCORE"] = scores
 
-    def identify_metagenes(self, cosine=None, upper_bound=40):
-        if cosine == None:
-            cosine = self.select_cosine_threshold()
-        clustering = AgglomerativeClustering(affinity="cosine",
-                                             linkage="complete",
-                                             distance_threshold=cosine,
-                                             n_clusters=None).fit(self.vector)
-        clusters = collections.defaultdict(list)
-        for l,g in zip(clustering.labels_,self.genes):
-            clusters[l].append(g)
-        markers = dict()
-        for cluster, genes in clusters.items():
-            if len(set(genes)) > 1 and len(set(genes)) < upper_bound:
-                markers["MG_{}".format(cluster)] = list(set(genes))
-        self.cluster_definitions = markers
-        return markers
+    def get_metagenes(self, gdata):
+        metagenes = collections.defaultdict(list)
+        for x,y in zip(gdata.obs["leiden"],gdata.obs.index):
+            metagenes[x].append(y)
+        return metagenes
 
     def compute_similarities(self, gene, subset=None, feature_type=None):
         if gene not in self.embeddings:

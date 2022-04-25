@@ -106,11 +106,41 @@ class GeneEmbedding(object):
         numpy.savetxt(".tmp.txt",mat)
         gdata = sc.read_text(".tmp.txt")
         os.remove(".tmp.txt")
-        gdata.obs.index = embed.genes
+        gdata.obs.index = self.genes
         sc.pp.neighbors(gdata,use_rep="X")
         sc.tl.leiden(gdata,resolution=resolution)
         sc.tl.umap(gdata)
         return gdata
+
+    def plot_cluster(self, gdata,cluster=None, title="Gene Embedding"):
+        import seaborn as sns
+        sns.set(font_scale=0.9)
+        sc.settings.verbosity = 3
+        sc.logging.print_header()
+        sc.settings.set_figure_params(dpi=400,facecolor='white')
+        highlight = []
+        labels = []
+        clusters = collections.defaultdict(list)
+        for x,y in zip(gdata.obs["leiden"],gdata.obs.index):
+            clusters[x].append(y)
+            if x == cluster:
+                highlight.append(str(x))
+                labels.append(y)
+            else:
+                highlight.append("_Other")
+        _labels = []
+        for gene in labels:
+            _labels.append(gene)
+        gdata.obs["Metagene {}".format(cluster)] = highlight
+        fig,ax = plt.subplots(1,1,figsize=(8,6))
+        sc.pl.umap(gdata,alpha=0.5,show=False,size=100,ax=ax)
+        sub = gdata[gdata.obs["Metagene {}".format(cluster)]!="_Other"]
+        sc.pl.umap(sub,color="Metagene {}".format(cluster),title=title,size=200,show=False,add_outline=False,ax=ax)
+
+        for gene, pos in zip(gdata.obs.index,gdata.obsm["X_umap"].tolist()):
+            if gene in _labels:
+                ax.text(pos[0]+.04, pos[1], str(gene), fontsize=6, alpha=0.9, fontweight="bold")
+        plt.tight_layout()
 
     def plot_metagenes_scores(self, adata, metagenes, column, plot=None):
         similarity_matrix = []
@@ -420,6 +450,28 @@ class CellEmbedding(object):
         self.clusters = _clusters
         return _clusters
 
+    def get_predictive_genes(self, adata, label, n_genes=10):
+        vectors = dict()
+        mapped_components = dict(zip(list(cembed.data.keys()),cembed.matrix))
+        comps = collections.defaultdict(list)
+        for bc,x in zip(adata.obs.index,adata.obs[label]):
+            comps[x].append(mapped_components[bc])
+        mean_vecs = []
+        for x, vec in comps.items():
+            ovecs = []
+            vec = numpy.average(vec,axis=0)
+            for oph, ovec in comps.items():
+                ovecs.append(numpy.average(ovec,axis=0))
+            aovec = numpy.median(ovecs,axis=0)
+            vector = numpy.subtract(vec,aovec)
+            vector = numpy.subtract(vector,cembed.dataset_vector)
+            vectors[x] = vector
+        markers = dict()
+        for x, mvec in vectors.items():
+            ct_sig = embed.get_similar_genes(mvec)[:n_genes]["Gene"].tolist()
+            markers[x] = ct_sig
+        return markers
+
     def cluster_definitions(self):
         gene_similarities = dict()
         vectors = collections.defaultdict(list)
@@ -544,9 +596,8 @@ class CellEmbedding(object):
                 plt.title(title)
         return distances
 
-    def phenotype_probability(self, phenotype_markers, method="softmax"):
+    def phenotype_probability(self, adata, phenotype_markers, target_col="genevector", method="softmax"):
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
-        adata = self.context.adata.copy()
         adata = adata[list(self.data.keys())]
         probs = dict()
         for pheno, markers in phenotype_markers.items():
@@ -554,9 +605,9 @@ class CellEmbedding(object):
             vector = self.embed.generate_vector(markers)
             ovecs = []
             for oph, ovec in phenotype_markers.items():
-                ovec = embed.generate_vector(ovec)
+                ovec = self.embed.generate_vector(ovec)
                 ovecs.append(ovec)
-            aovec = numpy.average(ovecs,axis=0)
+            aovec = numpy.median(ovecs,axis=0)
             vector = numpy.subtract(vector,aovec)
             for x in tqdm.tqdm(adata.obs.index):
                 dist = 1.0 - distance.cosine(mapped_components[x],vector)
@@ -585,7 +636,23 @@ class CellEmbedding(object):
                 assign = celltypes[numpy.argmax(ct)]
                 classif.append(assign)
         umap_pts = dict(zip(list(self.data.keys()),classif))
-        return {"distances":distribution, "order":celltypes, "probabilities":probabilities}
+        res = {"distances":distribution, "order":celltypes, "probabilities":probabilities}
+        barcode_to_label = dict(zip(list(self.data.keys()), res["probabilities"]))
+        ct = []
+        probs = collections.defaultdict(list)
+        for x in adata.obs.index:
+            ctx = res["order"][numpy.argmax(barcode_to_label[x])]
+            ct.append(ctx)
+            for ph, pb in zip(res["order"],barcode_to_label[x]):
+                probs[ph].append(pb)
+        adata.obs[target_col] = ct
+        def load_predictions(adata,probs):
+            for ph in probs.keys():
+                print(ph)
+                adata.obs[ph+" Pseudo-probability"] = probs[ph]
+            return adata
+        adata = load_predictions(adata,probs)
+        return adata
 
     def get_adata(self, min_dist=0.3, n_neighbors=50):
         adata = self.context.adata.copy()

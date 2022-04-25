@@ -202,7 +202,7 @@ class GeneVectorDataset(Dataset):
             else:
                 x = series[pair[0]]
                 y = series[pair[1]]
-                pxy, xedges, yedges = numpy.histogram2d(x,y,nbins=10)
+                pxy, xedges, yedges = numpy.histogram2d(x,y,bins=10)
                 pxy /= pxy.sum()
                 px = np.sum(pxy, axis=1)
                 py = np.sum(pxy, axis=0)

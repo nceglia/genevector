@@ -50,7 +50,7 @@ class GeneVectorModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=1000, initial_lr=0.01, device="cpu", use_mi=True, distance=None, scale=100):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, initial_lr=0.01, device="cpu", use_mi=True, distance=None, scale=1000):
         self.dataset = dataset
         self.dataset.create_inputs_outputs(use_mi=use_mi, distance=distance, scale=scale)
         self.output_file_name = output_file

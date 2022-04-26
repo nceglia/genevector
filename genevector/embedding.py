@@ -452,7 +452,7 @@ class CellEmbedding(object):
 
     def get_predictive_genes(self, adata, label, n_genes=10):
         vectors = dict()
-        mapped_components = dict(zip(list(cembed.data.keys()),cembed.matrix))
+        mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         comps = collections.defaultdict(list)
         for bc,x in zip(adata.obs.index,adata.obs[label]):
             comps[x].append(mapped_components[bc])
@@ -464,7 +464,7 @@ class CellEmbedding(object):
                 ovecs.append(numpy.average(ovec,axis=0))
             aovec = numpy.median(ovecs,axis=0)
             vector = numpy.subtract(vec,aovec)
-            vector = numpy.subtract(vector,cembed.dataset_vector)
+            vector = numpy.subtract(vector,self.dataset_vector)
             vectors[x] = vector
         markers = dict()
         for x, mvec in vectors.items():
@@ -597,6 +597,11 @@ class CellEmbedding(object):
         return distances
 
     def phenotype_probability(self, adata, phenotype_markers, target_col="genevector", method="softmax"):
+        from sklearn.preprocessing import StandardScaler, MinMaxScaler
+        from scipy.special import softmax
+        from scipy.spatial import distance
+        import numpy
+        import tqdm
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         adata = adata[list(self.data.keys())]
         probs = dict()

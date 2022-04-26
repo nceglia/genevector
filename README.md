@@ -13,6 +13,8 @@ source gvenv/bin/activate
 python3 setup.py install
 ```
 
+## For a workable example: see PBMC notebook in /example.
+
 ### Loading scanpy dataset into GeneVector.
 ```
 from genevector.data import GeneVectorDataset
@@ -48,7 +50,7 @@ gembed.compute_similarities("CD8A")
 ### Batch Correct and Get Scanpy AnnData Object
 ```
 cembed.batch_correct(column="sample")
-adata = cembed.get_adata(min_dist=0.1, n_neighbors=50)
+adata = cembed.get_adata()
 ```
 
 ### Get Gene Embedding and Find Metagenes

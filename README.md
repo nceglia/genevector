@@ -51,27 +51,11 @@ cembed.batch_correct(column="sample")
 adata = cembed.get_adata(min_dist=0.1, n_neighbors=50)
 ```
 
-### Find optimal cosine threshold and identify meta-genes.
+### Get Gene Embedding and Find Metagenes
 ```
-cosine_threshold = embed.select_cosine_threshold()
-metagenes = embed.identify_metagenes(cosine=cosine_threshold)
+gdata = embed.get_adata()
+metagenes = embed.get_metagenes(gdata)
 ```
-
-### Score metagenes over cells.
-```
-embed.score_metagenes(adata, metagenes)
-```
-
-### Generate heatmap of metagenes and scores over a set of conditions.
-```
-embed.plot_metagenes_scores(adata,metagenes,"condition")
-```
-
-### Generate an average vector for a set of genes.
-```
-cd8tcellvec = gembed.generate_vector(["CD8A","CD8B","CD3D","CD3E","CD3G"])
-```
-
 
 
 

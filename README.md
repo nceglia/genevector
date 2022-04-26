@@ -6,6 +6,7 @@
 https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
 
 ### Install:
+Make sure torch is installed: https://pytorch.org/get-started/locally/
 ```
 python3 -m venv gvenv
 source gvenv/bin/activate
@@ -28,8 +29,7 @@ dataset = GeneVectorDataset(adata, device="cuda")
 cmps = GeneVector(dataset,
                   output_file="genes.vec",
                   emb_dimension=100,
-                  batch_size=100000,
-                  initial_lr=0.05,
+                  initial_lr=0.1,
                   device="cuda")
 cmps.train(200) # run for 200 iterations
 ```

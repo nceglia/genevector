@@ -13,9 +13,9 @@ source gvenv/bin/activate
 python3 setup.py install
 ```
 
-## For a workable example: see PBMC notebook in /example.
+### Basics (For a workable example: see PBMC notebook in /example.)
 
-### Loading scanpy dataset into GeneVector.
+#### Loading scanpy dataset into GeneVector.
 ```
 from genevector.data import GeneVectorDataset
 from genevector.model import GeneVectorTrainer
@@ -26,7 +26,7 @@ import scanpy as sc
 dataset = GeneVectorDataset(adata, device="cuda")
 ```
 
-### Training gene vectors.
+#### Training gene vectors.
 ```
 cmps = GeneVector(dataset,
                   output_file="genes.vec",
@@ -36,24 +36,24 @@ cmps = GeneVector(dataset,
 cmps.train(200) # run for 200 iterations
 ```
 
-### Loading results.
+#### Loading results.
 ```
 gembed = GeneEmbedding("genes.vec", dataset, vector="average")
 cembed = CellEmbedding(context, gembed)
 ```
 
-### Compute gene similarities.
+#### Compute gene similarities.
 ```
 gembed.compute_similarities("CD8A")
 ```
 
-### Batch Correct and Get Scanpy AnnData Object
+#### Batch Correct and Get Scanpy AnnData Object
 ```
 cembed.batch_correct(column="sample")
 adata = cembed.get_adata()
 ```
 
-### Get Gene Embedding and Find Metagenes
+#### Get Gene Embedding and Find Metagenes
 ```
 gdata = embed.get_adata()
 metagenes = embed.get_metagenes(gdata)

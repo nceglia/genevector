@@ -112,18 +112,13 @@ class GeneEmbedding(object):
         sc.tl.umap(gdata)
         return gdata
 
-    def plot_cluster(self, gdata,cluster=None, title="Gene Embedding"):
-        import seaborn as sns
-        sns.set(font_scale=0.9)
-        sc.settings.verbosity = 3
-        sc.logging.print_header()
-        sc.settings.set_figure_params(dpi=400,facecolor='white')
+    def plot_metagene(self, gdata, mg=None, title="Gene Embedding"):
         highlight = []
         labels = []
         clusters = collections.defaultdict(list)
         for x,y in zip(gdata.obs["leiden"],gdata.obs.index):
             clusters[x].append(y)
-            if x == cluster:
+            if x == mg:
                 highlight.append(str(x))
                 labels.append(y)
             else:
@@ -131,11 +126,11 @@ class GeneEmbedding(object):
         _labels = []
         for gene in labels:
             _labels.append(gene)
-        gdata.obs["Metagene {}".format(cluster)] = highlight
+        gdata.obs["Metagene {}".format(mg)] = highlight
         fig,ax = plt.subplots(1,1,figsize=(8,6))
         sc.pl.umap(gdata,alpha=0.5,show=False,size=100,ax=ax)
-        sub = gdata[gdata.obs["Metagene {}".format(cluster)]!="_Other"]
-        sc.pl.umap(sub,color="Metagene {}".format(cluster),title=title,size=200,show=False,add_outline=False,ax=ax)
+        sub = gdata[gdata.obs["Metagene {}".format(mg)]!="_Other"]
+        sc.pl.umap(sub,color="Metagene {}".format(mg),title=title,size=200,show=False,add_outline=False,ax=ax)
 
         for gene, pos in zip(gdata.obs.index,gdata.obsm["X_umap"].tolist()):
             if gene in _labels:
@@ -168,7 +163,6 @@ class GeneEmbedding(object):
         matrix = numpy.array(matrix)
         df = pandas.DataFrame(matrix,index=meta_genes,columns=cts)
         plt.figure()
-        sns.set(font_scale=0.3)
         sns.clustermap(df,figsize=(5,9), dendrogram_ratio=0.1,cmap="mako",yticklabels=True, standard_scale=0)
         plt.tight_layout()
         if plot:
@@ -248,66 +242,6 @@ class GeneEmbedding(object):
             symbols.append(", ".join(genes[:top_n]))
         df = pandas.DataFrame.from_dict({"Cluster Name":clusters, "Top Genes":symbols})
         return df
-
-    def plot(self, png=None, method="TSNE", labels=[], pcs=None, remove=[]):
-        plt.figure(figsize = (8, 8))
-        ax = plt.subplot(1,1,1)
-        pcs = self.plot_reduction(self.cluster_labels, ax, labels=labels, method=method, pcs=pcs, remove=remove)
-        plt.show()
-        return pcs
-
-    def marker_labels(self,top_n=5):
-        markers = []
-        cluster_definitions = self.cluster_definitions
-        marker_labels = dict()
-        for gclust, genes in cluster_definitions.items():
-            print(gclust, ",".join(genes[:5]))
-            markers += genes[:top_n]
-            for gene in genes[:top_n]:
-                marker_labels[gene] = gclust
-        return markers, marker_labels
-
-    def plot_reduction(self, clusters, ax, method="TSNE", labels=[], pcs=None, remove=[]):
-        if type(pcs) != numpy.ndarray:
-            if method == "TSNE":
-                print("Running t-SNE")
-                pca = TSNE(n_components=2, n_jobs=-1, metric="cosine")
-                pcs = pca.fit_transform(self.vector)
-                pcs = numpy.transpose(pcs)
-                print("Finished.")
-            else:
-                print("Running UMAP")
-                trans = umap.UMAP(random_state=42,metric='cosine').fit(self.vector)
-                x = trans.embedding_[:, 0]
-                y = trans.embedding_[:, 1]
-                pcs = [x,y]
-                print("Finished.")
-        if len(remove) != 0:
-            _pcsx = []
-            _pcsy = []
-            _clusters = []
-            for x, y, c in zip(pcs[0],pcs[1],clusters):
-                if c not in remove:
-                    _pcsx.append(x)
-                    _pcsy.append(y)
-                    _clusters.append(c)
-            pcs = []
-            pcs.append(_pcsx)
-            pcs.append(_pcsy)
-            clusters = _clusters
-        data = {"x":pcs[0],"y":pcs[1], "Cluster":clusters}
-        df = pandas.DataFrame.from_dict(data)
-        sns.scatterplot(data=df,x="x", y="y",hue="Cluster", ax=ax)
-        plt.xlabel("{}-1".format(method))
-        plt.ylabel("{}-2".format(method))
-        ax.set_xticks([])
-        ax.set_yticks([])
-        if len(labels):
-            for x, y, gene in zip(pcs[0], pcs[1], self.context.expressed_genes):
-                if gene in labels:
-                    ax.text(x+.02, y, str(gene), fontsize=8)
-        return pcs
-
 
     @staticmethod
     def read_vector(vec):
@@ -468,7 +402,7 @@ class CellEmbedding(object):
             vectors[x] = vector
         markers = dict()
         for x, mvec in vectors.items():
-            ct_sig = embed.get_similar_genes(mvec)[:n_genes]["Gene"].tolist()
+            ct_sig = self.embed.get_similar_genes(mvec)[:n_genes]["Gene"].tolist()
             markers[x] = ct_sig
         return markers
 
@@ -671,6 +605,35 @@ class CellEmbedding(object):
         sc.tl.umap(adata, min_dist=min_dist)
         self.adata = adata
         return adata
+
+    @staticmethod
+    def plot_confusion_matrix(adata,label1,label2):
+        from sklearn.metrics import confusion_matrix
+        gv = adata.obs[label1].tolist()
+        gt = adata.obs[label2].tolist()
+        def plot_cm(y_true, y_pred, figsize=(10,10)):
+            cm = confusion_matrix(y_true, y_pred, labels=np.unique(y_true))
+            cm_sum = np.sum(cm, axis=1, keepdims=True)
+            cm_perc = cm / cm_sum.astype(float) * 100
+            annot = np.empty_like(cm).astype(str)
+            nrows, ncols = cm.shape
+            for i in range(nrows):
+                for j in range(ncols):
+                    c = cm[i, j]
+                    p = cm_perc[i, j]
+                    if i == j:
+                        s = cm_sum[i]
+                        annot[i, j] = '%.1f%%\n%d/%d' % (p, c, s)
+                    elif c == 0:
+                        annot[i, j] = ''
+                    else:
+                        annot[i, j] = '%.1f%%\n%d' % (p, c)
+            cm = pd.DataFrame(cm, index=np.unique(y_true), columns=np.unique(y_true))
+            cm.index.name = 'Gene Vector'
+            cm.columns.name = 'Ground Truth'
+            fig, ax = plt.subplots(figsize=figsize)
+            sns.heatmap(cm, annot=annot, fmt='', ax=ax)
+        plot_cm(gv,gt)
 
     def group_cell_vectors(self, label):
         barcode_to_label = dict(zip(self.context.adata.obs.index.tolist(),self.context.adata.obs[label]))

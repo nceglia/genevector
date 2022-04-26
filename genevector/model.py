@@ -50,9 +50,9 @@ class GeneVectorModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, initial_lr=0.01, device="cpu", use_mi=True, distance=None, scale=1000):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, initial_lr=0.01, device="cpu", threshold=1e-6, scale=1000):
         self.dataset = dataset
-        self.dataset.create_inputs_outputs(use_mi=use_mi, distance=distance, scale=scale)
+        self.dataset.create_inputs_outputs(scale=scale)
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension
@@ -66,6 +66,8 @@ class GeneVector(object):
         elif self.device == "cuda":
             self.model.cuda()
         self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
+        self.epoch = 0
+        self.threshold = threshold
 
 
     def train(self, epochs):
@@ -83,6 +85,12 @@ class GeneVector(object):
                 loss_values.append(loss.item())
                 if batch_i % 100 == 0:
                     print("Epoch: {}/{} \t Batch: {}/{} \t Loss: {}".format(e, epochs, batch_i, n_batches, np.mean(loss_values[-20:])))
+            delta = abs(loss_values[-2] -loss_values[-1])
+            print("Epoch",self.epoch, "\t",delta)
+            if delta < self.threshold:
+                print("Training completed.")
+                break
+            self.epoch += 1
         print("Saving model...")
         self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name, 0)
         self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name.replace(".vec","2.vec"), 1)

@@ -39,7 +39,7 @@ cmps.train(200) # run for 200 iterations
 #### Loading results.
 ```
 gembed = GeneEmbedding("genes.vec", dataset, vector="average")
-cembed = CellEmbedding(context, gembed)
+cembed = CellEmbedding(dataset, gembed)
 ```
 
 #### Compute gene similarities.

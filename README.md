@@ -6,6 +6,7 @@
 https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
 
 ### Install:
+Make sure torch is installed: https://pytorch.org/get-started/locally/
 ```
 python3 -m venv gvenv
 source gvenv/bin/activate
@@ -28,8 +29,7 @@ dataset = GeneVectorDataset(adata, device="cuda")
 cmps = GeneVector(dataset,
                   output_file="genes.vec",
                   emb_dimension=100,
-                  batch_size=100000,
-                  initial_lr=0.05,
+                  initial_lr=0.1,
                   device="cuda")
 cmps.train(200) # run for 200 iterations
 ```
@@ -51,27 +51,11 @@ cembed.batch_correct(column="sample")
 adata = cembed.get_adata(min_dist=0.1, n_neighbors=50)
 ```
 
-### Find optimal cosine threshold and identify meta-genes.
+### Get Gene Embedding and Find Metagenes
 ```
-cosine_threshold = embed.select_cosine_threshold()
-metagenes = embed.identify_metagenes(cosine=cosine_threshold)
+gdata = embed.get_adata()
+metagenes = embed.get_metagenes(gdata)
 ```
-
-### Score metagenes over cells.
-```
-embed.score_metagenes(adata, metagenes)
-```
-
-### Generate heatmap of metagenes and scores over a set of conditions.
-```
-embed.plot_metagenes_scores(adata,metagenes,"condition")
-```
-
-### Generate an average vector for a set of genes.
-```
-cd8tcellvec = gembed.generate_vector(["CD8A","CD8B","CD3D","CD3E","CD3G"])
-```
-
 
 
 

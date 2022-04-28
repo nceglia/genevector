@@ -86,7 +86,7 @@ class GeneVector(object):
                 if batch_i % 100 == 0:
                     print("Epoch: {}/{} \t Batch: {}/{} \t Loss: {}".format(e, epochs, batch_i, n_batches, np.mean(loss_values[-20:])))
             delta = abs(loss_values[-2] -loss_values[-1])
-            print("Epoch",self.epoch, "\t",delta)
+            print("Epoch",self.epoch, "\tDelta->",delta,"\tLoss:",np.mean(loss_values[-20:]))
             if delta < self.threshold:
                 print("Training completed.")
                 break

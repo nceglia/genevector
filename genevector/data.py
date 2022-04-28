@@ -173,41 +173,35 @@ class GeneVectorDataset(Dataset):
         self.device = device
 
     def generate_mi_scores(self,distance=None, use_fastmi=False):
-        if distance == None:
-            distance = dict()
-        df = pandas.DataFrame.from_dict(self.data.expression)
-        jdf = df.fillna(0)
-        genes = jdf.index.tolist()
-        total_genes = genes
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
-        num_genes = len(genes)
-        nbs = dict()
-        import itertools
-        pairs = list(itertools.combinations(genes, 2))
-        print(len(pairs))
-        print("Computing MI for each pair.")
-        series = dict()
-        for gene in genes:
-            series[gene] = np.array(jdf.loc[gene])
-        for pair in tqdm.tqdm(pairs):
-            x = series[pair[0]]
-            y = series[pair[1]]
-            if use_fastmi:
-                import fastmi
-                x = [int(x1) for x1 in x]
-                y = [int(x1) for x1 in y]
-                mi = fastmi.mutual_information(x,y)
-                mi_scores[pair[0]][pair[1]] = mi
-                mi_scores[pair[1]][pair[0]] = mi
-            else:
-                pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
-                px = np.sum(pxy, axis=1)
-                py = np.sum(pxy, axis=0)
-                px_py = px[:, None] * py[None, :]
-                nzs = pxy > 0
-                mi = np.sum(pxy[nzs] * np.log2(pxy[nzs] / px_py[nzs]))
-                mi_scores[pair[0]][pair[1]] = mi
-                mi_scores[pair[1]][pair[0]] = mi
+        bcs = dict()
+        num_cells = len(self.data.cells)
+        vgenes = []
+        for gene, bc in self.data.data.items():
+            bcs[gene] = set(bc)
+            vgenes.append(gene)
+        pairs = list(itertools.combinations(vgenes, 2))
+        counts = collections.defaultdict(lambda : collections.defaultdict(int))
+        for c, p in self.data.expression.items():
+            for g,v in p.items():
+                counts[g][c] += int(v)
+        for p1,p2 in tqdm.tqdm(pairs):
+            common = bcs[p1].intersection(bcs[p2])
+            x = []
+            y = []
+            countsp1 = counts[p1]
+            countsp2 = counts[p2]
+            for c in common:
+                x.append(countsp1[c])
+                y.append(countsp2[c])
+            pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
+            px = np.sum(pxy, axis=1)
+            py = np.sum(pxy, axis=0)
+            px_py = px[:, None] * py[None, :]
+            nzs = pxy > 0
+            mi = np.sum(pxy[nzs] * np.log2(pxy[nzs] / px_py[nzs]))
+            mi_scores[p1][p2] = mi
+            mi_scores[p2][p1] = mi
         self.mi_scores = mi_scores
 
     def create_inputs_outputs(self, use_mi=True, distance=None, scale=100.0, use_fastmi=False):

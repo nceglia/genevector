@@ -194,6 +194,8 @@ class GeneVectorDataset(Dataset):
             y = series[pair[1]]
             if use_fastmi:
                 import fastmi
+                x = [int(x1) for x1 in x]
+                y = [int(x1) for x1 in y]
                 mi = fastmi.mutual_information(x,y)
                 mi_scores[pair[0]][pair[1]] = mi
                 mi_scores[pair[1]][pair[0]] = mi

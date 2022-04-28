@@ -172,7 +172,7 @@ class GeneVectorDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
 
-    def generate_mi_scores(self,distance=None, use_fastmi=False):
+    def generate_mi_scores(self, min_pct=0.00,max_pct=0.75):
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
         num_cells = len(self.data.cells)
@@ -187,6 +187,8 @@ class GeneVectorDataset(Dataset):
                 counts[g][c] += int(v)
         for p1,p2 in tqdm.tqdm(pairs):
             common = bcs[p1].intersection(bcs[p2])
+            if len(common) / num_cells < min_pct or len(common) / num_cells > max_pct:
+                continue
             x = []
             y = []
             countsp1 = counts[p1]
@@ -204,11 +206,10 @@ class GeneVectorDataset(Dataset):
             mi_scores[p2][p1] = mi
         self.mi_scores = mi_scores
 
-    def create_inputs_outputs(self, use_mi=True, distance=None, scale=100.0, use_fastmi=False):
-        print("Generating matrix.")
+    def create_inputs_outputs(self,scale=100.0, max_pct=0.75, min_pct=0.0):
+        print("Generating inputs and outputs.")
         import pandas
-        if use_mi:
-            self.generate_mi_scores(distance=distance, use_fastmi=use_fastmi)
+        self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct)
 
         from sklearn import feature_extraction
         vectorizer = feature_extraction.DictVectorizer(sparse=True)
@@ -246,8 +247,7 @@ class GeneVectorDataset(Dataset):
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
                 self.correlation[gene][cgene] = value
-                if use_mi:
-                    value = self.mi_scores[gene][cgene]
+                value = self.mi_scores[gene][cgene]
                 value = value * (coocc[wi,ci]/len(self.data.cells)) * scale
                 if value > 0:
                     self._xij.append(value)

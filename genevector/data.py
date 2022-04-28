@@ -172,7 +172,7 @@ class GeneVectorDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
 
-    def generate_mi_scores(self,distance=None):
+    def generate_mi_scores(self,distance=None, use_fastmi=False):
         if distance == None:
             distance = dict()
         df = pandas.DataFrame.from_dict(self.data.expression)
@@ -192,21 +192,27 @@ class GeneVectorDataset(Dataset):
         for pair in tqdm.tqdm(pairs):
             x = series[pair[0]]
             y = series[pair[1]]
-            pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
-            px = np.sum(pxy, axis=1)
-            py = np.sum(pxy, axis=0)
-            px_py = px[:, None] * py[None, :]
-            nzs = pxy > 0
-            mi = np.sum(pxy[nzs] * np.log2(pxy[nzs] / px_py[nzs]))
-            mi_scores[pair[0]][pair[1]] = mi
-            mi_scores[pair[1]][pair[0]] = mi
+            if use_fastmi:
+                import fastmi
+                mi = fastmi.mutual_information(x,y)
+                mi_scores[pair[0]][pair[1]] = mi
+                mi_scores[pair[1]][pair[0]] = mi
+            else:
+                pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
+                px = np.sum(pxy, axis=1)
+                py = np.sum(pxy, axis=0)
+                px_py = px[:, None] * py[None, :]
+                nzs = pxy > 0
+                mi = np.sum(pxy[nzs] * np.log2(pxy[nzs] / px_py[nzs]))
+                mi_scores[pair[0]][pair[1]] = mi
+                mi_scores[pair[1]][pair[0]] = mi
         self.mi_scores = mi_scores
 
-    def create_inputs_outputs(self, use_mi=True, distance=None, scale=100.0):
+    def create_inputs_outputs(self, use_mi=True, distance=None, scale=100.0, use_fastmi=False):
         print("Generating matrix.")
         import pandas
         if use_mi:
-            self.generate_mi_scores(distance=distance)
+            self.generate_mi_scores(distance=distance, use_fastmi=use_fastmi)
 
         from sklearn import feature_extraction
         vectorizer = feature_extraction.DictVectorizer(sparse=True)

@@ -323,7 +323,7 @@ class CellEmbedding(object):
             weights = numpy.array(weights)
             scaler = MinMaxScaler(feature_range=(1.0,3.0))
             scaled_weights = scaler.fit_transform(numpy.array(weights).reshape(-1,1))
-            # scaled_weights = [x + 1.0 for x in list(scaled_weights.reshape(1,-1)[0])]
+            scaled_weights = list(scaled_weights.reshape(1,-1)[0])
             vectors = numpy.array([embed.embeddings[gene] for gene in cell_genes])
             self.matrix.append(numpy.average(vectors,axis=0,weights=scaled_weights))
             self.data[cell] = vectors

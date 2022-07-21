@@ -10,10 +10,18 @@ Make sure torch is installed: https://pytorch.org/get-started/locally/
 ```
 python3 -m venv gvenv
 source gvenv/bin/activate
+python3 pip install -r requirements.txt
 python3 setup.py install
 ```
 
-### Basics (For a workable example: see PBMC notebook in /example.)
+Software has been tested on Macbook (M1 Pro/M1/Intel)
+
+### Example Tutorial
+
+PBMC workflow with identification of interferon stimulated metagene and cell type annotation is available in /example.
+
+
+### Basics
 
 #### Loading scanpy dataset into GeneVector.
 ```

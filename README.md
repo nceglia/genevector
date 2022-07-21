@@ -15,10 +15,12 @@ python3 setup.py install
 ```
 
 Software has been tested on Macbook (M1 Pro/M1/Intel)
+Install time: < 5 min (dependent on Torch).
 
 ### Example Tutorial
 
 PBMC workflow with identification of interferon stimulated metagene and cell type annotation is available in /example.
+Runtime: ~2 min for data loading and ~5 min for training (Macbook M1 Pro)
 
 
 ### Basics
@@ -40,8 +42,9 @@ cmps = GeneVector(dataset,
                   output_file="genes.vec",
                   emb_dimension=100,
                   initial_lr=0.1,
+                  threshold=1e-6,
                   device="cuda")
-cmps.train(200) # run for 200 iterations
+cmps.train(200) # run for 200 iterations o6r loss delta below 1e-6.
 ```
 
 #### Loading results.

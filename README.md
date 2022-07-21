@@ -1,7 +1,7 @@
 ![alt text](https://github.com/nceglia/genevector/blob/main/logo.png?raw=true)
 ## Vector representations of gene co-expression in single cell RNAseq.
 
-![alt text](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true)
+![alt text](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true | width=100)
 
 https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
 
@@ -53,7 +53,7 @@ cmps = GeneVector(dataset,
                   initial_lr=0.1,
                   threshold=1e-6,
                   device="cuda")
-cmps.train(200) # run for 200 iterations o6r loss delta below 1e-6.
+cmps.train(200) # run for 200 iterations or loss delta below 1e-6.
 ```
 
 #### Loading results.

@@ -10,10 +10,23 @@ Make sure torch is installed: https://pytorch.org/get-started/locally/
 ```
 python3 -m venv gvenv
 source gvenv/bin/activate
+python3 pip install -r requirements.txt
 python3 setup.py install
 ```
 
-### Basics (For a workable example: see PBMC notebook in /example.)
+Software has been tested on Macbook (M1 Pro/M1/Intel)
+
+Install time: < 5 min (dependent on Torch).
+
+### Example Tutorial
+
+PBMC workflow with identification of interferon stimulated metagene and cell type annotation is available in /example.
+
+
+Runtime: ~2 min for data loading and ~5 min for training (Macbook M1 Pro)
+
+
+### Basics
 
 #### Loading scanpy dataset into GeneVector.
 ```
@@ -32,8 +45,9 @@ cmps = GeneVector(dataset,
                   output_file="genes.vec",
                   emb_dimension=100,
                   initial_lr=0.1,
+                  threshold=1e-6,
                   device="cuda")
-cmps.train(200) # run for 200 iterations
+cmps.train(200) # run for 200 iterations o6r loss delta below 1e-6.
 ```
 
 #### Loading results.

@@ -15,11 +15,14 @@ python3 setup.py install
 ```
 
 Software has been tested on Macbook (M1 Pro/M1/Intel)
+
 Install time: < 5 min (dependent on Torch).
 
 ### Example Tutorial
 
 PBMC workflow with identification of interferon stimulated metagene and cell type annotation is available in /example.
+
+
 Runtime: ~2 min for data loading and ~5 min for training (Macbook M1 Pro)
 
 

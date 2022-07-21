@@ -6,7 +6,12 @@
 https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
 
 ### Install:
-Make sure torch is installed: https://pytorch.org/get-started/locally/
+
+Prerequisite software:
+Torch: https://pytorch.org/get-started/locally/ 
+igraph: https://igraph.org/python/doc/tutorial/install.html (`brew install igraph` on Mac)
+igraph-python: `conda install -c conda-forge python-igraph`
+
 ```
 python3 -m venv gvenv
 source gvenv/bin/activate
@@ -16,14 +21,15 @@ python3 setup.py install
 
 Software has been tested on Macbook (M1 Pro/M1/Intel)
 
-Install time: < 5 min (dependent on Torch).
+Install time: < 20 min (dependent on Torch).
 
 ### Example Tutorial
 
 PBMC workflow with identification of interferon stimulated metagene and cell type annotation is available in /example.
 
+Launch `jupyter notebook` inside /example directory after installing GeneVector.
 
-Runtime: ~2 min for data loading and ~5 min for training (Macbook M1 Pro)
+Runtime: ~2 min for data loading and ~8 min for training (Macbook M1 Pro)
 
 
 ### Basics

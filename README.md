@@ -8,10 +8,7 @@ https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
 ### Install:
 
 Prerequisite software:
-Torch: https://pytorch.org/get-started/locally/ 
-igraph: https://igraph.org/python/doc/tutorial/install.html (`brew install igraph` on Mac)
-igraph-python: `conda install -c conda-forge python-igraph`
-
+ - Torch: https://pytorch.org/get-started/locally/ 
 ```
 python3 -m venv gvenv
 source gvenv/bin/activate

@@ -1,12 +1,22 @@
 ![alt text](https://github.com/nceglia/genevector/blob/main/logo.png?raw=true)
 ## Vector representations of gene co-expression in single cell RNAseq.
 
-![alt text](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true)
+![alt text](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true | width=20)
 
 https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
 
 ### Install:
-Make sure torch is installed: https://pytorch.org/get-started/locally/
+
+Prerequisite software:
+Torch: https://pytorch.org/get-started/locally/ 
+
+igraph: https://igraph.org/python/doc/tutorial/install.html (`brew install igraph` on Mac)
+
+
+igraph-python: `conda install -c conda-forge python-igraph`
+
+
+
 ```
 python3 -m venv gvenv
 source gvenv/bin/activate
@@ -16,14 +26,15 @@ python3 setup.py install
 
 Software has been tested on Macbook (M1 Pro/M1/Intel)
 
-Install time: < 5 min (dependent on Torch).
+Install time: < 20 min (dependent on Torch).
 
 ### Example Tutorial
 
 PBMC workflow with identification of interferon stimulated metagene and cell type annotation is available in /example.
 
+Launch `jupyter notebook` inside /example directory after installing GeneVector.
 
-Runtime: ~2 min for data loading and ~5 min for training (Macbook M1 Pro)
+Runtime: ~2 min for data loading and ~8 min for training (Macbook M1 Pro)
 
 
 ### Basics
@@ -47,7 +58,7 @@ cmps = GeneVector(dataset,
                   initial_lr=0.1,
                   threshold=1e-6,
                   device="cuda")
-cmps.train(200) # run for 200 iterations o6r loss delta below 1e-6.
+cmps.train(200) # run for 200 iterations or loss delta below 1e-6.
 ```
 
 #### Loading results.

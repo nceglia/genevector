@@ -20,12 +20,12 @@ Software has been tested on Macbook (M1 Pro/M1/Intel)
 
 Install time: < 20 min (dependent on what you have installed.).
 
-### Example Tutorial
+### Example Tutorial (see "example")
 
-PBMC workflow: Identification of interferon stimulated metagene and cell type annotation.
-TICA workflow: Cell type assignment.
-SPECTRUM workflow: Vector arithmetic for site specific metagenes.
-FITNESS workflow: Identifying increasing metagenes in time series.
+1. PBMC workflow: Identification of interferon stimulated metagene and cell type annotation.
+2. TICA workflow: Cell type assignment.
+3. SPECTRUM workflow: Vector arithmetic for site specific metagenes.
+4. FITNESS workflow: Identifying increasing metagenes in time series.
 
 Data:
 [H5ads and Pre-built Embeddings](https://drive.google.com/drive/folders/1ZRsdnlu9MSaRm4t_w_glD5XTqrY6CnIY?usp=sharing)

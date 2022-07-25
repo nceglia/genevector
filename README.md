@@ -1,22 +1,14 @@
 ![alt text](https://github.com/nceglia/genevector/blob/main/logo.png?raw=true)
 ## Vector representations of gene co-expression in single cell RNAseq.
 
-![alt text](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true | width=20)
+![alt text](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true)
 
 https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
 
 ### Install:
 
 Prerequisite software:
-Torch: https://pytorch.org/get-started/locally/ 
-
-igraph: https://igraph.org/python/doc/tutorial/install.html (`brew install igraph` on Mac)
-
-
-igraph-python: `conda install -c conda-forge python-igraph`
-
-
-
+ - Torch: https://pytorch.org/get-started/locally/ 
 ```
 python3 -m venv gvenv
 source gvenv/bin/activate
@@ -26,11 +18,17 @@ python3 setup.py install
 
 Software has been tested on Macbook (M1 Pro/M1/Intel)
 
-Install time: < 20 min (dependent on Torch).
+Install time: < 20 min (dependent on what you have installed.).
 
-### Example Tutorial
+### Example Tutorial (see "example")
 
-PBMC workflow with identification of interferon stimulated metagene and cell type annotation is available in /example.
+1. PBMC workflow: Identification of interferon stimulated metagene and cell type annotation.
+2. TICA workflow: Cell type assignment.
+3. SPECTRUM workflow: Vector arithmetic for site specific metagenes.
+4. FITNESS workflow: Identifying increasing metagenes in time series.
+
+Data:
+[H5ads and Pre-built Embeddings](https://drive.google.com/drive/folders/1ZRsdnlu9MSaRm4t_w_glD5XTqrY6CnIY?usp=sharing)
 
 Launch `jupyter notebook` inside /example directory after installing GeneVector.
 

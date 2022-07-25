@@ -1,7 +1,7 @@
 ![alt text](https://github.com/nceglia/genevector/blob/main/logo.png?raw=true)
 ## Vector representations of gene co-expression in single cell RNAseq.
 
-![alt text](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true | width=20)
+![alt text](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true)
 
 https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
 
@@ -9,13 +9,8 @@ https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
 
 Prerequisite software:
 Torch: https://pytorch.org/get-started/locally/ 
-
 igraph: https://igraph.org/python/doc/tutorial/install.html (`brew install igraph` on Mac)
-
-
 igraph-python: `conda install -c conda-forge python-igraph`
-
-
 
 ```
 python3 -m venv gvenv
@@ -26,7 +21,7 @@ python3 setup.py install
 
 Software has been tested on Macbook (M1 Pro/M1/Intel)
 
-Install time: < 20 min (dependent on Torch).
+Install time: < 20 min (dependent on what you have installed.).
 
 ### Example Tutorial
 

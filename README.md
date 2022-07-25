@@ -25,7 +25,13 @@ Install time: < 20 min (dependent on what you have installed.).
 
 ### Example Tutorial
 
-PBMC workflow with identification of interferon stimulated metagene and cell type annotation is available in /example.
+PBMC workflow: Identification of interferon stimulated metagene and cell type annotation.
+TICA workflow: Cell type assignment.
+SPECTRUM workflow: Vector arithmetic for site specific metagenes.
+FITNESS workflow: Identifying increasing metagenes in time series.
+
+Data:
+[H5ads and Pre-built Embeddings](https://drive.google.com/drive/folders/1ZRsdnlu9MSaRm4t_w_glD5XTqrY6CnIY?usp=sharing)
 
 Launch `jupyter notebook` inside /example directory after installing GeneVector.
 

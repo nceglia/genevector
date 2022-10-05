@@ -303,29 +303,30 @@ class CellEmbedding(object):
 
     def __init__(self, dataset, embed):
         self.context = dataset.data
-        cell_to_gene = list(self.context.cell_to_gene.items())
         self.embed = embed
         self.expression = self.context.expression
         self.data = collections.defaultdict(list)
         self.weights = collections.defaultdict(list)
         self.pcs = dict()
-        embed_genes = list(embed.embeddings.keys())
         self.matrix = []
 
-        for cell, genes in tqdm.tqdm(cell_to_gene):
-            cell_weights = self.expression[cell]
-            cell_genes = []
+        adata = self.context.adata
+        adata.layers["counts"] = adata.X
+        sc.pp.normalize_total(adata)
+        sc.pp.log1p(adata)
+
+        weights = collections.defaultdict(list)
+
+        for cell in tqdm.tqdm(adata.obs.index.tolist()):
+            cell_weights = dict(zip(adata.var.index.tolist(),adata.X[adata.obs.index.tolist().index(cell),]))
             weights = []
+            vectors = []
             for g,w in cell_weights.items():
-                if w != 0.0:
-                    cell_genes.append(g)
+                if w != 0.0 and g in embed.embeddings:
                     weights.append(w)
+                    vectors.append(embed.embeddings[g])
             weights = numpy.array(weights)
-            scaler = MinMaxScaler(feature_range=(1.0,3.0))
-            scaled_weights = scaler.fit_transform(numpy.array(weights).reshape(-1,1))
-            scaled_weights = list(scaled_weights.reshape(1,-1)[0])
-            vectors = numpy.array([embed.embeddings[gene] for gene in cell_genes])
-            self.matrix.append(numpy.average(vectors,axis=0,weights=scaled_weights))
+            self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
             self.data[cell] = vectors
         self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
 
@@ -612,10 +613,10 @@ class CellEmbedding(object):
         gv = adata.obs[label1].tolist()
         gt = adata.obs[label2].tolist()
         def plot_cm(y_true, y_pred, figsize=(10,10)):
-            cm = confusion_matrix(y_true, y_pred, labels=np.unique(y_true))
-            cm_sum = np.sum(cm, axis=1, keepdims=True)
+            cm = confusion_matrix(y_true, y_pred, labels=numpy.unique(y_true))
+            cm_sum = numpy.sum(cm, axis=1, keepdims=True)
             cm_perc = cm / cm_sum.astype(float) * 100
-            annot = np.empty_like(cm).astype(str)
+            annot = numpy.empty_like(cm).astype(str)
             nrows, ncols = cm.shape
             for i in range(nrows):
                 for j in range(ncols):
@@ -628,7 +629,7 @@ class CellEmbedding(object):
                         annot[i, j] = ''
                     else:
                         annot[i, j] = '%.1f%%\n%d' % (p, c)
-            cm = pd.DataFrame(cm, index=np.unique(y_true), columns=np.unique(y_true))
+            cm = pandas.DataFrame(cm, index=numpy.unique(y_true), columns=numpy.unique(y_true))
             cm.index.name = 'Gene Vector'
             cm.columns.name = 'Ground Truth'
             fig, ax = plt.subplots(figsize=figsize)

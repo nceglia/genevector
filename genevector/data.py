@@ -6,9 +6,7 @@ import numpy
 from scipy.sparse import csr_matrix, find
 import operator
 import itertools
-from itertools import permutations
 import argparse
-import tqdm
 import random
 import pickle
 import collections
@@ -20,7 +18,6 @@ from collections import Counter
 from scipy import stats
 from sklearn.linear_model import LinearRegression
 import gc
-import numpy as np
 import matplotlib.pyplot as plt
 import scipy
 import pandas
@@ -30,6 +27,8 @@ import pandas
 import tqdm
 import statsmodels.api as sm
 from scipy.stats import nbinom
+import fast_histogram
+from sklearn import feature_extraction
 
 class Context(object):
 
@@ -187,8 +186,6 @@ class GeneVectorDataset(Dataset):
                 counts[g][c] += int(v)
         for p1,p2 in tqdm.tqdm(pairs):
             common = bcs[p1].intersection(bcs[p2])
-            if len(common) / num_cells < min_pct or len(common) / num_cells > max_pct:
-                continue
             x = []
             y = []
             countsp1 = counts[p1]
@@ -196,7 +193,9 @@ class GeneVectorDataset(Dataset):
             for c in common:
                 x.append(countsp1[c])
                 y.append(countsp2[c])
-            pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
+            if len(y) == 0 or len(x) == 0: continue
+            pxy= fast_histogram.histogram2d(x,y,bins=max([max(x),max(y)]), range=[[0,max(x)],[0,max(y)]])
+            pxy = pxy / pxy.sum()
             px = np.sum(pxy, axis=1)
             py = np.sum(pxy, axis=0)
             px_py = px[:, None] * py[None, :]
@@ -208,10 +207,7 @@ class GeneVectorDataset(Dataset):
 
     def create_inputs_outputs(self,scale=100.0, max_pct=0.75, min_pct=0.0):
         print("Generating inputs and outputs.")
-        import pandas
         self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct)
-
-        from sklearn import feature_extraction
         vectorizer = feature_extraction.DictVectorizer(sparse=True)
         corr_matrix = vectorizer.fit_transform(list(self.data.expression.values()))
         corr_matrix[corr_matrix != 0] = 1
@@ -248,7 +244,7 @@ class GeneVectorDataset(Dataset):
                 self._j_idx.append(ci)
                 self.correlation[gene][cgene] = value
                 value = self.mi_scores[gene][cgene]
-                value = value * (coocc[wi,ci]/len(self.data.cells)) * scale
+                value = value * coocc[wi,ci]
                 if value > 0:
                     self._xij.append(value)
                 else:

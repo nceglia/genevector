@@ -18,6 +18,12 @@ import scanpy as sc
 import matplotlib.gridspec as gridspec
 import networkx as nx
 import matplotlib as mpl
+from sklearn.metrics import confusion_matrix
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from scipy.special import softmax
+from scipy.spatial import distance
+import numpy
+import tqdm
 
 import numpy
 import operator
@@ -311,6 +317,7 @@ class CellEmbedding(object):
         self.matrix = []
 
         adata = self.context.adata
+        # adata.X = adata.X.todense()
         adata.layers["counts"] = adata.X
         sc.pp.normalize_total(adata)
         sc.pp.log1p(adata)
@@ -532,11 +539,6 @@ class CellEmbedding(object):
         return distances
 
     def phenotype_probability(self, adata, phenotype_markers, target_col="genevector", method="softmax"):
-        from sklearn.preprocessing import StandardScaler, MinMaxScaler
-        from scipy.special import softmax
-        from scipy.spatial import distance
-        import numpy
-        import tqdm
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         adata = adata[list(self.data.keys())]
         probs = dict()
@@ -547,7 +549,7 @@ class CellEmbedding(object):
             for oph, ovec in phenotype_markers.items():
                 ovec = self.embed.generate_vector(ovec)
                 ovecs.append(ovec)
-            aovec = numpy.median(ovecs,axis=0)
+            aovec = numpy.mean(ovecs,axis=0)
             vector = numpy.subtract(vector,aovec)
             for x in tqdm.tqdm(adata.obs.index):
                 dist = 1.0 - distance.cosine(mapped_components[x],vector)
@@ -561,20 +563,11 @@ class CellEmbedding(object):
         distribution = list(zip(*distribution))
         classif = []
         probabilities = []
-        if method=="normalized":
-            scaler = MinMaxScaler()
-            res = scaler.fit_transform(numpy.array(distribution))
-            for ct in res:
-                ct = ct / ct.sum()
-                probabilities.append(ct)
-                assign = celltypes[numpy.argmax(ct)]
-                classif.append(assign)
-        if method=="softmax":
-            scaler = StandardScaler()
-            probabilities = softmax(scaler.fit_transform(numpy.array(distribution)),axis=1)
-            for ct in probabilities:
-                assign = celltypes[numpy.argmax(ct)]
-                classif.append(assign)
+        scaler = StandardScaler()
+        probabilities = softmax(scaler.fit_transform(numpy.array(distribution)),axis=1)
+        for ct in probabilities:
+            assign = celltypes[numpy.argmax(ct)]
+            classif.append(assign)
         umap_pts = dict(zip(list(self.data.keys()),classif))
         res = {"distances":distribution, "order":celltypes, "probabilities":probabilities}
         barcode_to_label = dict(zip(list(self.data.keys()), res["probabilities"]))
@@ -586,6 +579,7 @@ class CellEmbedding(object):
             for ph, pb in zip(res["order"],barcode_to_label[x]):
                 probs[ph].append(pb)
         adata.obs[target_col] = ct
+
         def load_predictions(adata,probs):
             for ph in probs.keys():
                 print(ph)
@@ -609,7 +603,6 @@ class CellEmbedding(object):
 
     @staticmethod
     def plot_confusion_matrix(adata,label1,label2):
-        from sklearn.metrics import confusion_matrix
         gv = adata.obs[label1].tolist()
         gt = adata.obs[label2].tolist()
         def plot_cm(y_true, y_pred, figsize=(10,10)):

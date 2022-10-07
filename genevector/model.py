@@ -1,26 +1,19 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import init
 import torch.optim as optim
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 import scanpy as sc
-from torch.autograd import Variable
-
 import torch as t
 import numpy as np
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Variable
-from torch.nn.init import xavier_normal
+import numpy
+import matplotlib.pyplot as plt
 
 def mse_loss(inputs, targets, device):
     loss = F.mse_loss(inputs, targets, reduction='none')
     if device == "cuda":
         loss = loss.cuda()
     return torch.mean(loss).to(device)
-
 
 class GeneVectorModel(nn.Module):
     def __init__(self, num_embeddings, embedding_dim):
@@ -49,8 +42,10 @@ class GeneVectorModel(nn.Module):
                 e = ' '.join(map(lambda x: str(x), embedding[wid]))
                 f.write('%s %s\n' % (w, e))
 
+
+
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, initial_lr=0.01, device="cpu", threshold=1e-5, scale=1000, max_pct=0.5, min_pct=0.0):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, initial_lr=0.01, device="cpu",  scale=1000, max_pct=0.5, min_pct=0.0):
         self.dataset = dataset
         self.dataset.create_inputs_outputs(scale=scale, max_pct=max_pct, min_pct=min_pct)
         self.output_file_name = output_file
@@ -65,32 +60,53 @@ class GeneVector(object):
             raise ValueError("CUDA requested but no GPU available.")
         elif self.device == "cuda":
             self.model.cuda()
-        self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
+        self.optimizer = optim.Adadelta(self.model.parameters())
+        #self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
+        self.loss = nn.CosineEmbeddingLoss()
         self.epoch = 0
-        self.threshold = threshold
+        self.loss_values = list()
+        self.mean_loss_values = []
 
 
-    def train(self, epochs):
+    def train(self, epochs, threshold=1e-5):
         n_batches = int(len(self.dataset._xij) / self.batch_size)
-        loss_values = list()
+        last_loss = 0.
         for e in range(1, epochs+1):
             batch_i = 0
             for x_ij, i_idx, j_idx in self.dataset.get_batches(self.batch_size):
                 batch_i += 1
                 self.optimizer.zero_grad()
                 outputs = self.model(i_idx, j_idx)
-                loss = mse_loss(outputs, x_ij, self.device)
+                loss = self.loss(j_idx, outputs, x_ij)
                 loss.backward()
                 self.optimizer.step()
-                loss_values.append(loss.item())
+                self.loss_values.append(loss.item())
                 if batch_i % 100 == 0:
-                    print("Epoch: {}/{} \t Batch: {}/{} \t Loss: {}".format(e, epochs, batch_i, n_batches, np.mean(loss_values[-20:])))
-            delta = abs(loss_values[-2] -loss_values[-1])
-            print("Epoch",self.epoch, "\tDelta->",delta,"\tLoss:",np.mean(loss_values[-20:]))
-            if delta < self.threshold:
-                print("Training completed.")
-                break
+                    print("Epoch: {}/{} \t Batch: {}/{} \t Loss: {}".format(e, epochs, batch_i, n_batches, np.mean(self.loss_values[-20:])))
+            self.mean_loss_values.append(numpy.mean(self.loss_values[-20:]))
+            curr_loss = numpy.mean(self.loss_values[-20:])
+            delta = abs(curr_loss - last_loss) 
+            print("Epoch",self.epoch, "\tDelta->",delta,"\tLoss:",np.mean(self.loss_values[-20:]))
+            if abs(curr_loss - last_loss) < threshold:
+                print("Training complete!")
+                return
+            last_loss = curr_loss
             self.epoch += 1
         print("Saving model...")
         self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name, 0)
         self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name.replace(".vec","2.vec"), 1)
+
+    def save(self, filepath):
+        torch.save(self.model.state_dict(), filepath)
+
+    def load(self, filepath):
+        self.gnn.load_state_dict(torch.load(filepath))
+        self.gnn.eval()
+
+    def plot(self, fname=None):
+        fig, ax = plt.subplots(1,1,figsize=(12,5),facecolor='#FFFFFF')
+        ax.plot(self.mean_loss_values, color="purple")
+        ax.set_ylabel('Loss')
+        ax.set_xlabel('Epoch')
+        if fname != None:
+            fig.savefig(fname)

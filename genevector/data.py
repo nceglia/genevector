@@ -29,6 +29,7 @@ import statsmodels.api as sm
 from scipy.stats import nbinom
 import fast_histogram
 from sklearn import feature_extraction
+import collections
 
 class Context(object):
 
@@ -174,7 +175,6 @@ class GeneVectorDataset(Dataset):
     def generate_mi_scores(self, min_pct=0.00,max_pct=0.75):
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
-        num_cells = len(self.data.cells)
         vgenes = []
         for gene, bc in self.data.data.items():
             bcs[gene] = set(bc)
@@ -193,16 +193,20 @@ class GeneVectorDataset(Dataset):
             for c in common:
                 x.append(countsp1[c])
                 y.append(countsp2[c])
-            if len(y) == 0 or len(x) == 0: continue
+            if len(y) == 0 or len(x) == 0: 
+                continue
+            if max(x) == 0 or max(y) == 0:
+                continue
             pxy= fast_histogram.histogram2d(x,y,bins=max([max(x),max(y)]), range=[[0,max(x)],[0,max(y)]])
             pxy = pxy / pxy.sum()
             px = np.sum(pxy, axis=1)
             py = np.sum(pxy, axis=0)
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
-            mi = np.sum(pxy[nzs] * np.log2(pxy[nzs] / px_py[nzs]))
-            mi_scores[p1][p2] = mi
-            mi_scores[p2][p1] = mi
+            mi = numpy.log2(np.sum(pxy[nzs] * (pxy[nzs] / px_py[nzs])))
+            ppmi = numpy.max([mi, 0.]) 
+            mi_scores[p1][p2] = ppmi
+            mi_scores[p2][p1] = ppmi
         self.mi_scores = mi_scores
 
     def create_inputs_outputs(self,scale=100.0, max_pct=0.75, min_pct=0.0):
@@ -222,33 +226,24 @@ class GeneVectorDataset(Dataset):
 
         corr_matrix = pandas.DataFrame(data=corr_matrix.todense(),columns=all_genes)
         corr_df = corr_matrix
-
-        print("Decomposing")
         coocc = numpy.array(corr_df.T.dot(corr_df))
-
         corr_matrix = numpy.transpose(corr_matrix.to_numpy())
         cov = numpy.corrcoef(corr_matrix)
 
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
-        import collections
+
         self.correlation = collections.defaultdict(dict)
 
         for gene, row in tqdm.tqdm(zip(all_genes, cov)):
-            for cgene, value in zip(all_genes, row):
+            for cgene, _ in zip(all_genes, row):
                 if gene == cgene: continue
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                self.correlation[gene][cgene] = value
-                value = self.mi_scores[gene][cgene]
-                value = value * coocc[wi,ci]
-                if value > 0:
-                    self._xij.append(value)
-                else:
-                    self._xij.append(0.)
+                self._xij.append(self.mi_scores[gene][cgene] )
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()

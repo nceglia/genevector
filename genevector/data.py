@@ -163,6 +163,8 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
+
+
 class GeneVectorDataset(Dataset):
 
     def __init__(self, adata, device="cpu", expression=None):
@@ -172,7 +174,7 @@ class GeneVectorDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
 
-    def generate_mi_scores(self, min_pct=0.00,max_pct=0.75):
+    def generate_mi_scores(self, min_pct=0.00,max_pct=0.75,k=3.):
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
         vgenes = []
@@ -203,11 +205,17 @@ class GeneVectorDataset(Dataset):
             py = np.sum(pxy, axis=0)
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
-            mi = numpy.log2(np.sum(pxy[nzs] * (pxy[nzs] / px_py[nzs])))
-            ppmi = numpy.max([mi, 0.]) 
-            mi_scores[p1][p2] = ppmi
-            mi_scores[p2][p1] = ppmi
+            pmi = numpy.log2(np.sum(pxy[nzs] * (pxy[nzs] / px_py[nzs])))
+            k = 3.
+            k_fam = (-1. *  (k - 1.)) * numpy.log2(numpy.mean(pxy[nzs]))
+            pmik = pmi - k_fam
+            pmik = -1. * pmik
+            if numpy.isnan(pmik):
+                pmik = 0.0
+            mi_scores[p1][p2] = pmik
+            mi_scores[p2][p1] = pmik
         self.mi_scores = mi_scores
+
 
     def create_inputs_outputs(self,scale=100.0, max_pct=0.75, min_pct=0.0):
         print("Generating inputs and outputs.")
@@ -243,7 +251,7 @@ class GeneVectorDataset(Dataset):
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                self._xij.append(self.mi_scores[gene][cgene] )
+                self._xij.append(self.mi_scores[gene][cgene])
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()

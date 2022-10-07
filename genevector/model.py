@@ -62,7 +62,7 @@ class GeneVector(object):
             self.model.cuda()
         self.optimizer = optim.Adadelta(self.model.parameters())
         #self.optimizer = optim.Adagrad(self.model.parameters(), lr=initial_lr)
-        self.loss = nn.CosineEmbeddingLoss()
+        self.loss = nn.MSELoss()
         self.epoch = 0
         self.loss_values = list()
         self.mean_loss_values = []
@@ -77,7 +77,7 @@ class GeneVector(object):
                 batch_i += 1
                 self.optimizer.zero_grad()
                 outputs = self.model(i_idx, j_idx)
-                loss = self.loss(j_idx, outputs, x_ij)
+                loss = self.loss(outputs, x_ij)
                 loss.backward()
                 self.optimizer.step()
                 self.loss_values.append(loss.item())

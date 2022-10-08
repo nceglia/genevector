@@ -45,14 +45,13 @@ class GeneVectorModel(nn.Module):
 
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, initial_lr=0.01, device="cpu",  scale=1000, max_pct=0.5, min_pct=0.0):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, device="cpu",  k=3):
         self.dataset = dataset
-        self.dataset.create_inputs_outputs(scale=scale, max_pct=max_pct, min_pct=min_pct)
+        self.dataset.create_inputs_outputs(k=k)
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension
         self.batch_size = batch_size
-        self.initial_lr = initial_lr
         self.use_cuda = torch.cuda.is_available()
         self.model = GeneVectorModel(self.emb_size, self.emb_dimension)
         self.device = device

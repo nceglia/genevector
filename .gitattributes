@@ -1,1 +1,2 @@
 example/** linguist-vendored
+genevector/_version.py export-subst

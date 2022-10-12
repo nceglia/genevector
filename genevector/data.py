@@ -201,12 +201,18 @@ class GeneVectorDataset(Dataset):
             py = np.sum(pxy, axis=0)
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
-            mi = np.sum(pxy[nzs] * np.log2(pxy[nzs] / px_py[nzs]))
-            mi_scores[p1][p2] = mi
-            mi_scores[p2][p1] = mi
+            pmi = numpy.log2(np.sum(pxy[nzs] * (pxy[nzs] / px_py[nzs])))
+            k = 3.
+            k_fam = (-1. *  (k - 1.)) * numpy.log2(numpy.mean(pxy[nzs]))
+            pmik = pmi - k_fam
+            pmik = -1. * pmik
+            if numpy.isnan(pmik):
+                pmik = 0.0
+            mi_scores[p1][p2] = pmik
+            mi_scores[p2][p1] = pmik
         self.mi_scores = mi_scores
 
-    def create_inputs_outputs(self,scale=100.0, max_pct=0.75, min_pct=0.0):
+    def create_inputs_outputs(self, max_pct=0.75, min_pct=0.0):
         print("Generating inputs and outputs.")
         import pandas
         self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct)
@@ -246,9 +252,7 @@ class GeneVectorDataset(Dataset):
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                self.correlation[gene][cgene] = value
                 value = self.mi_scores[gene][cgene]
-                value = value * (coocc[wi,ci]/len(self.data.cells)) * scale
                 if value > 0:
                     self._xij.append(value)
                 else:

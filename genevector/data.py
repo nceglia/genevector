@@ -172,7 +172,7 @@ class GeneVectorDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
 
-    def generate_mi_scores(self, min_pct=0.00,max_pct=0.75):
+    def generate_mi_scores(self,k = 3, min_pct=0.00,max_pct=0.75):
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
         num_cells = len(self.data.cells)
@@ -202,7 +202,6 @@ class GeneVectorDataset(Dataset):
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
             pmi = numpy.log2(np.sum(pxy[nzs] * (pxy[nzs] / px_py[nzs])))
-            k = 3.
             k_fam = (-1. *  (k - 1.)) * numpy.log2(numpy.mean(pxy[nzs]))
             pmik = pmi - k_fam
             pmik = -1. * pmik

@@ -31,6 +31,7 @@ import fast_histogram
 from sklearn import feature_extraction
 import collections
 
+
 class Context(object):
 
     def __init__(self):
@@ -59,10 +60,6 @@ class Context(object):
             pass
         context.cells = context.adata.obs.index
         context.cell_index, context.index_cell = Context.index_cells(context.cells)
-        # context.data, context.cell_to_gene = context.expression(context.normalized_matrix, \
-        #                     context.genes, \
-        #                     context.index_cell,
-        #                     expression=expression)
         context.expressed_genes = adata.var.index.tolist()#context.get_expressed_genes(context.data)
         context.gene_index, context.index_gene = Context.index_geneset(context.expressed_genes)
         context.gene2id = context.gene_index
@@ -172,7 +169,7 @@ class GeneVectorDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
 
-    def generate_mi_scores(self,k=3.):
+    def generate_mi_scores(self,k = 4, min_pct=0.01,max_pct=0.3):
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         genes = dict()
         adata = self.data.adata
@@ -197,7 +194,6 @@ class GeneVectorDataset(Dataset):
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
             pmi = numpy.log2(np.sum(pxy[nzs] * (pxy[nzs] / px_py[nzs])))
-            k = 3.
             k_fam = (-1. *  (k - 1.)) * numpy.log2(numpy.mean(pxy[nzs]))
             pmik = pmi - k_fam
             pmik = -1. * pmik
@@ -207,12 +203,10 @@ class GeneVectorDataset(Dataset):
             mi_scores[p2][p1] = pmik
         self.mi_scores = mi_scores
 
-
-    def create_inputs_outputs(self, k):
+    def create_inputs_outputs(self, max_pct=0.75, min_pct=0.0):
         print("Generating inputs and outputs.")
-        self.generate_mi_scores(k=k)
-
-
+        import pandas
+        self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct)
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
         index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
         self.data.gene2id = gene_index
@@ -231,7 +225,12 @@ class GeneVectorDataset(Dataset):
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                self._xij.append(self.mi_scores[gene][cgene])
+                value = self.mi_scores[gene][cgene]
+                if value > 0:
+                    self._xij.append(value)
+                else:
+                    self._xij.append(0.)
+
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()

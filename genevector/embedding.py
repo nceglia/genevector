@@ -379,7 +379,7 @@ class CellEmbedding(object):
             vectors[x] = vector
         markers = dict()
         for x, mvec in vectors.items():
-            ct_sig = self.embed.get_similar_genes(mvec)[:n_genes]["Gene"].tolist()
+            ct_sig = self.embed.get_similar_genes(mvec)[-1.*n_genes:]["Gene"].tolist()
             markers[x] = ct_sig
         return markers
 

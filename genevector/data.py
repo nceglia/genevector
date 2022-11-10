@@ -6,9 +6,7 @@ import numpy
 from scipy.sparse import csr_matrix, find
 import operator
 import itertools
-from itertools import permutations
 import argparse
-import tqdm
 import random
 import pickle
 import collections
@@ -20,7 +18,6 @@ from collections import Counter
 from scipy import stats
 from sklearn.linear_model import LinearRegression
 import gc
-import numpy as np
 import matplotlib.pyplot as plt
 import scipy
 import pandas
@@ -30,6 +27,9 @@ import pandas
 import tqdm
 import statsmodels.api as sm
 from scipy.stats import nbinom
+import fast_histogram
+from sklearn import feature_extraction
+import collections
 
 
 class Context(object):
@@ -51,7 +51,7 @@ class Context(object):
         context.genes = [x.upper() for x in list(context.adata.var.index)]
         context.normalized_matrix = context.adata.X
         context.metadata = context.adata.obs
-        context.frequency_lower_bound = frequency_lower_bound
+        # context.frequency_lower_bound = frequency_lower_bound
         try:
             for column in context.metadata.columns:
                 if type(context.metadata[column][0]) == bytes:
@@ -60,16 +60,10 @@ class Context(object):
             pass
         context.cells = context.adata.obs.index
         context.cell_index, context.index_cell = Context.index_cells(context.cells)
-        context.data, context.cell_to_gene = context.expression(context.normalized_matrix, \
-                            context.genes, \
-                            context.index_cell,
-                            expression=expression)
-        context.expressed_genes = context.get_expressed_genes(context.data)
+        context.expressed_genes = adata.var.index.tolist()#context.get_expressed_genes(context.data)
         context.gene_index, context.index_gene = Context.index_geneset(context.expressed_genes)
         context.gene2id = context.gene_index
         context.id2gene = context.index_gene
-        context.gene_count = len(context.gene_frequency.keys())
-        context.adata = adata
         return context
 
     @classmethod
@@ -164,6 +158,8 @@ class Context(object):
     def frequency(self, gene):
         return self.gene_frequency[gene] / len(self.cells)
 
+
+
 class GeneVectorDataset(Dataset):
 
     def __init__(self, adata, device="cpu", expression=None):
@@ -175,29 +171,24 @@ class GeneVectorDataset(Dataset):
 
     def generate_mi_scores(self,k = 4, min_pct=0.01,max_pct=0.3):
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
-        bcs = dict()
-        num_cells = len(self.data.cells)
+        genes = dict()
+        adata = self.data.adata
         vgenes = []
-        for gene, bc in self.data.data.items():
-            bcs[gene] = set(bc)
-            vgenes.append(gene)
-        pairs = list(itertools.combinations(vgenes, 2))
-        counts = collections.defaultdict(lambda : collections.defaultdict(int))
-        for c, p in self.data.expression.items():
-            for g,v in p.items():
-                counts[g][c] += int(v)
-        for p1,p2 in tqdm.tqdm(pairs):
-            common = bcs[p1].intersection(bcs[p2])
-            if len(common) / num_cells < min_pct or len(common) / num_cells > max_pct:
+        for gene in self.data.genes:
+            try:
+                genes[gene] = adata.X[:,adata.var.index.tolist().index(gene)].T.todense().tolist()[0]
+                vgenes.append(gene)
+            except Exception as e:
                 continue
-            x = []
-            y = []
-            countsp1 = counts[p1]
-            countsp2 = counts[p2]
-            for c in common:
-                x.append(countsp1[c])
-                y.append(countsp2[c])
-            pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
+        pairs = list(itertools.combinations(vgenes, 2))
+        for p1,p2 in tqdm.tqdm(pairs):
+            x = genes[p1]
+            y = genes[p2]
+            xmx = max(x)
+            ymx = max(y)
+            mx = max([xmx,ymx])
+            pxy= fast_histogram.histogram2d(x,y,bins=mx, range=[[0,xmx],[0,ymx]])
+            pxy = pxy / pxy.sum()
             px = np.sum(pxy, axis=1)
             py = np.sum(pxy, axis=0)
             px_py = px[:, None] * py[None, :]
@@ -216,37 +207,19 @@ class GeneVectorDataset(Dataset):
         print("Generating inputs and outputs.")
         import pandas
         self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct)
-
-        from sklearn import feature_extraction
-        vectorizer = feature_extraction.DictVectorizer(sparse=True)
-        corr_matrix = vectorizer.fit_transform(list(self.data.expression.values()))
-        corr_matrix[corr_matrix != 0] = 1
-
-        all_genes = vectorizer.feature_names_
-
-        gene_index = {w: idx for (idx, w) in enumerate(all_genes)}
-        index_gene = {idx: w for (idx, w) in enumerate(all_genes)}
+        gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
+        index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
         self.data.gene2id = gene_index
         self.data.id2gene = index_gene
-        self.data.expressed_genes = all_genes
-
-        corr_matrix = pandas.DataFrame(data=corr_matrix.todense(),columns=all_genes)
-        corr_df = corr_matrix
-
-        print("Decomposing")
-        coocc = numpy.array(corr_df.T.dot(corr_df))
-
-        corr_matrix = numpy.transpose(corr_matrix.to_numpy())
-        cov = numpy.corrcoef(corr_matrix)
 
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
-        import collections
+
         self.correlation = collections.defaultdict(dict)
 
-        for gene, row in tqdm.tqdm(zip(all_genes, cov)):
-            for cgene, value in zip(all_genes, row):
+        for gene in tqdm.tqdm(self.data.genes):
+            for cgene in self.data.genes:
                 if gene == cgene: continue
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
@@ -257,6 +230,7 @@ class GeneVectorDataset(Dataset):
                     self._xij.append(value)
                 else:
                     self._xij.append(0.)
+
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()
@@ -265,8 +239,6 @@ class GeneVectorDataset(Dataset):
             self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
             self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
             self._xij = torch.FloatTensor(self._xij).to("cpu")
-        self.coocc = coocc
-        self.cov = cov
 
 
     def get_batches(self, batch_size):

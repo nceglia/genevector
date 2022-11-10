@@ -47,7 +47,7 @@ class GeneVectorModel(nn.Module):
 class GeneVector(object):
     def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, device="cpu",  k=3):
         self.dataset = dataset
-        self.dataset.create_inputs_outputs()
+        self.dataset.create_inputs_outputs(k=k)
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension

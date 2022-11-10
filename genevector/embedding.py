@@ -18,6 +18,12 @@ import scanpy as sc
 import matplotlib.gridspec as gridspec
 import networkx as nx
 import matplotlib as mpl
+from sklearn.metrics import confusion_matrix
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from scipy.special import softmax
+from scipy.spatial import distance
+import numpy
+import tqdm
 
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from scipy.special import softmax
@@ -318,6 +324,7 @@ class CellEmbedding(object):
         self.matrix = []
 
         adata = self.context.adata
+
         adata.layers["counts"] = adata.X
         sc.pp.normalize_total(adata)
         sc.pp.log1p(adata)
@@ -590,7 +597,6 @@ class CellEmbedding(object):
         distribution = list(zip(*distribution))
         classif = []
         probabilities = []
-
         scaler = StandardScaler()
         probabilities = softmax(scaler.fit_transform(numpy.array(distribution)),axis=1)
         for ct in probabilities:
@@ -607,6 +613,7 @@ class CellEmbedding(object):
             for ph, pb in zip(res["order"],barcode_to_label[x]):
                 probs[ph].append(pb)
         adata.obs[target_col] = ct
+
         def load_predictions(adata,probs):
             for ph in probs.keys():
                 print(ph)
@@ -632,13 +639,14 @@ class CellEmbedding(object):
     def plot_confusion_matrix(adata,label1,label2):
         import numpy as np
         from sklearn.metrics import confusion_matrix
+
         gv = adata.obs[label1].tolist()
         gt = adata.obs[label2].tolist()
         def plot_cm(y_true, y_pred, figsize=(10,10)):
             cm = confusion_matrix(y_true, y_pred, labels=numpy.unique(y_true))
-            cm_sum = np.sum(cm, axis=1, keepdims=True)
+            cm_sum = numpy.sum(cm, axis=1, keepdims=True)
             cm_perc = cm / cm_sum.astype(float) * 100
-            annot = np.empty_like(cm).astype(str)
+            annot = numpy.empty_like(cm).astype(str)
             nrows, ncols = cm.shape
             for i in range(nrows):
                 for j in range(ncols):
@@ -651,7 +659,7 @@ class CellEmbedding(object):
                         annot[i, j] = ''
                     else:
                         annot[i, j] = '%.1f%%\n%d' % (p, c)
-            cm = pd.DataFrame(cm, index=np.unique(y_true), columns=np.unique(y_true))
+            cm = pandas.DataFrame(cm, index=numpy.unique(y_true), columns=numpy.unique(y_true))
             cm.index.name = 'Gene Vector'
             cm.columns.name = 'Ground Truth'
             fig, ax = plt.subplots(figsize=figsize)

@@ -31,6 +31,7 @@ import tqdm
 import statsmodels.api as sm
 from scipy.stats import nbinom
 
+
 class Context(object):
 
     def __init__(self):
@@ -172,7 +173,7 @@ class GeneVectorDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
 
-    def generate_mi_scores(self,k = 3, min_pct=0.00,max_pct=0.75):
+    def generate_mi_scores(self,k = 4, min_pct=0.01,max_pct=0.3):
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
         num_cells = len(self.data.cells)

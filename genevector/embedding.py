@@ -19,6 +19,12 @@ import matplotlib.gridspec as gridspec
 import networkx as nx
 import matplotlib as mpl
 
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from scipy.special import softmax
+from scipy.spatial import distance
+import numpy
+import tqdm
+
 import numpy
 import operator
 import random
@@ -26,6 +32,7 @@ import pickle
 import collections
 import sys
 import os
+import pandas as pd
 
 class GeneEmbedding(object):
 
@@ -303,29 +310,30 @@ class CellEmbedding(object):
 
     def __init__(self, dataset, embed):
         self.context = dataset.data
-        cell_to_gene = list(self.context.cell_to_gene.items())
         self.embed = embed
         self.expression = self.context.expression
         self.data = collections.defaultdict(list)
         self.weights = collections.defaultdict(list)
         self.pcs = dict()
-        embed_genes = list(embed.embeddings.keys())
         self.matrix = []
 
-        for cell, genes in tqdm.tqdm(cell_to_gene):
-            cell_weights = self.expression[cell]
-            cell_genes = []
+        adata = self.context.adata
+        adata.layers["counts"] = adata.X
+        sc.pp.normalize_total(adata)
+        sc.pp.log1p(adata)
+
+        weights = collections.defaultdict(list)
+
+        for cell in tqdm.tqdm(adata.obs.index.tolist()):
+            cell_weights = dict(zip(adata.var.index.tolist(),adata.X[adata.obs.index.tolist().index(cell)]))
             weights = []
+            vectors = []
             for g,w in cell_weights.items():
-                if w != 0.0:
-                    cell_genes.append(g)
+                if g in embed.embeddings:
                     weights.append(w)
+                    vectors.append(embed.embeddings[g])
             weights = numpy.array(weights)
-            scaler = MinMaxScaler(feature_range=(1.0,3.0))
-            scaled_weights = scaler.fit_transform(numpy.array(weights).reshape(-1,1))
-            scaled_weights = list(scaled_weights.reshape(1,-1)[0])
-            vectors = numpy.array([embed.embeddings[gene] for gene in cell_genes])
-            self.matrix.append(numpy.average(vectors,axis=0,weights=scaled_weights))
+            self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
             self.data[cell] = vectors
         self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
 
@@ -385,6 +393,29 @@ class CellEmbedding(object):
         return _clusters
 
     def get_predictive_genes(self, adata, label, n_genes=10):
+        vectors = dict()
+        mapped_components = dict(zip(list(self.data.keys()),self.matrix))
+        comps = collections.defaultdict(list)
+        for bc,x in zip(adata.obs.index,adata.obs[label]):
+            comps[x].append(mapped_components[bc])
+        mean_vecs = []
+        for x, vec in comps.items():
+            ovecs = []
+            vec = numpy.average(vec,axis=0)
+            for oph, ovec in comps.items():
+                if oph != x:
+                    ovecs.append(numpy.average(ovec,axis=0))
+            aovec = numpy.median(ovecs,axis=0)
+            vector = numpy.subtract(vec,aovec)
+            vector = numpy.subtract(vector,self.dataset_vector)
+            vectors[x] = vector
+        markers = dict()
+        for x, mvec in vectors.items():
+            ct_sig = self.embed.get_similar_genes(mvec)[:n_genes]["Gene"].tolist()
+            markers[x] = ct_sig
+        return markers
+
+    def get_inverse_predictive_genes(self, adata, label, n_genes=10):
         vectors = dict()
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         comps = collections.defaultdict(list)
@@ -530,23 +561,22 @@ class CellEmbedding(object):
                 plt.title(title)
         return distances
 
-    def phenotype_probability(self, adata, phenotype_markers, target_col="genevector", method="softmax"):
-        from sklearn.preprocessing import StandardScaler, MinMaxScaler
-        from scipy.special import softmax
-        from scipy.spatial import distance
-        import numpy
-        import tqdm
+    def phenotype_probability(self, adata, up_phenotype_markers, down_phenotype_markers, target_col="genevector"):
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         adata = adata[list(self.data.keys())]
         probs = dict()
-        for pheno, markers in phenotype_markers.items():
+        for pheno, markers in up_phenotype_markers.items():
             dists = []
             vector = self.embed.generate_vector(markers)
+            if pheno in down_phenotype_markers:
+                dvector = self.embed.generate_vector(down_phenotype_markers[pheno])
+                vector = numpy.subtract(vector, dvector)
             ovecs = []
-            for oph, ovec in phenotype_markers.items():
-                ovec = self.embed.generate_vector(ovec)
-                ovecs.append(ovec)
-            aovec = numpy.median(ovecs,axis=0)
+            for oph, ovec in up_phenotype_markers.items():
+                if oph != pheno:
+                    ovec = self.embed.generate_vector(ovec)
+                    ovecs.append(ovec)
+            aovec = numpy.mean(ovecs,axis=0)
             vector = numpy.subtract(vector,aovec)
             for x in tqdm.tqdm(adata.obs.index):
                 dist = 1.0 - distance.cosine(mapped_components[x],vector)
@@ -560,20 +590,12 @@ class CellEmbedding(object):
         distribution = list(zip(*distribution))
         classif = []
         probabilities = []
-        if method=="normalized":
-            scaler = MinMaxScaler()
-            res = scaler.fit_transform(numpy.array(distribution))
-            for ct in res:
-                ct = ct / ct.sum()
-                probabilities.append(ct)
-                assign = celltypes[numpy.argmax(ct)]
-                classif.append(assign)
-        if method=="softmax":
-            scaler = StandardScaler()
-            probabilities = softmax(scaler.fit_transform(numpy.array(distribution)),axis=1)
-            for ct in probabilities:
-                assign = celltypes[numpy.argmax(ct)]
-                classif.append(assign)
+
+        scaler = StandardScaler()
+        probabilities = softmax(scaler.fit_transform(numpy.array(distribution)),axis=1)
+        for ct in probabilities:
+            assign = celltypes[numpy.argmax(ct)]
+            classif.append(assign)
         umap_pts = dict(zip(list(self.data.keys()),classif))
         res = {"distances":distribution, "order":celltypes, "probabilities":probabilities}
         barcode_to_label = dict(zip(list(self.data.keys()), res["probabilities"]))
@@ -608,11 +630,12 @@ class CellEmbedding(object):
 
     @staticmethod
     def plot_confusion_matrix(adata,label1,label2):
+        import numpy as np
         from sklearn.metrics import confusion_matrix
         gv = adata.obs[label1].tolist()
         gt = adata.obs[label2].tolist()
         def plot_cm(y_true, y_pred, figsize=(10,10)):
-            cm = confusion_matrix(y_true, y_pred, labels=np.unique(y_true))
+            cm = confusion_matrix(y_true, y_pred, labels=numpy.unique(y_true))
             cm_sum = np.sum(cm, axis=1, keepdims=True)
             cm_perc = cm / cm_sum.astype(float) * 100
             annot = np.empty_like(cm).astype(str)

@@ -40,6 +40,9 @@ import sys
 import os
 import pandas as pd
 
+
+import gc
+
 class GeneEmbedding(object):
 
     def __init__(self, embedding_file, dataset, vector="1"):
@@ -66,44 +69,6 @@ class GeneEmbedding(object):
         for gene in tqdm.tqdm(self.embeddings.keys()):
             self.vector.append(self.embeddings[gene])
             self.genes.append(gene)
-
-    def select_cosine_threshold(self,plot=None):
-        gene_sets = set()
-        cosine = []
-        sill = []
-        cosine_max = 0.0
-        max_score = 0.0
-        for i in numpy.linspace(0.0,1,100):
-            clustering = AgglomerativeClustering(affinity="cosine",
-                                                 linkage="complete",
-                                                 distance_threshold=i,
-                                                 n_clusters=None).fit(self.vector)
-            clusters = collections.defaultdict(list)
-            if len(set(clustering.labels_)) > 1 and len(set(clustering.labels_)) != len(clustering.labels_):
-                score = metrics.silhouette_score(self.vector, clustering.labels_, metric='cosine')
-                sill.append(score)
-                cosine.append(i)
-                if score > max_score:
-                    cosine_max = i
-                    max_score = score
-        self.cosine_threshold = cosine_max
-
-        if plot:
-            sns.set(font_scale=0.6)
-            params = {'legend.fontsize': 'small',
-                      'axes.labelsize': 'small',
-                      'axes.titlesize':'small'}
-            fig, ax = plt.subplots(1,1,figsize=(5,1))
-            sns.lineplot(x=cosine,y=sill,color="g",ax=ax)
-            plt.vlines(cosine_max,ymin=0,ymax=max(sill)+0.05,color="blue")
-            ax.set_title("PBMC")
-            ax.set_xlim(0,1)
-            ax.set_ylim(0,max(sill)+0.05)
-            ax.set_ylabel("Silhouette Coefficient")
-            ax.set_xlabel("Cosine Similarity Threshold")
-            plt.tight_layout()
-            plt.savefig(plot)
-        return cosine_max
 
     def read_embedding(self, filename):
         embedding = dict()
@@ -323,9 +288,7 @@ class CellEmbedding(object):
         self.pcs = dict()
         self.matrix = []
 
-        adata = self.context.adata
-
-        adata.layers["counts"] = adata.X
+        adata = self.context.adata.copy()
         sc.pp.normalize_total(adata)
         sc.pp.log1p(adata)
 
@@ -344,60 +307,36 @@ class CellEmbedding(object):
             self.data[cell] = vectors
         self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
 
-    def batch_correct(self, column=None, resolution=1, atten=1.0):
+    def batch_correct(self, column, reference):
         if not column:
             raise ValueError("Must supply batch label to correct.")
-        _clusters = []
-        for cluster in self.matrix:
-            _clusters.append("C1")
-        self.clusters = _clusters
         column_labels = dict(zip(self.context.cells, self.context.metadata[column]))
         labels = []
         for key in self.data.keys():
             labels.append(column_labels[key])
-        local_correction = collections.defaultdict(lambda : collections.defaultdict(list))
-        correction_vectors = collections.defaultdict(dict)
-        for cluster, batch, vec in zip(self.clusters, labels, self.matrix):
-            local_correction[cluster][batch].append(vec)
-        for cluster, batches in local_correction.items():
-            cluster_vec = []
-            batch_keys = list(batches.keys())
-            base_batch = batch_keys.pop(0)
-            max_distance = 1.0
-            cluster_vec = numpy.average(batches[base_batch], axis=0)
-            for batch in batch_keys:
-                bvec = list(numpy.average(batches[batch], axis=0))
-                distance = float(cosine_similarity(numpy.array(bvec).reshape(1, -1),numpy.array(cluster_vec).reshape(1, -1))[0])
-                offset = numpy.subtract(cluster_vec,bvec)
-                bvec = numpy.add(bvec,offset)
-                distance = float(cosine_similarity(numpy.array(bvec).reshape(1, -1),numpy.array(cluster_vec).reshape(1, -1))[0])
-                correction_vectors[cluster][batch] = offset
-
-        self.matrix = []
-        self.sample_vector = collections.defaultdict(list)
-        i = 0
+        batches = collections.defaultdict(list)
+        correction_vectors = dict()
+        for batch, vec in zip(labels, self.matrix):
+            batches[batch].append(vec)
+        assert reference in batches, "Reference label not found."
+        reference_vector = numpy.average(batches.pop(reference),axis=0)
+        print("Generating batch vectors.")
+        for batch, vbatches in batches.items():
+            if batch != reference:
+                batch_vec = numpy.average(vbatches, axis=0)
+                offset = numpy.subtract(reference_vector,batch_vec)
+                correction_vectors[batch] = offset
+                print("Computing correction vector for {}.".format(batch))
+        corrected_matrix = []
+        gc.collect()
         self.cell_order = []
-        for cell, vectors in self.data.items():
-            cluster = self.clusters[i]
-            xvec = list(numpy.average(vectors, axis=0))
-            batch = column_labels[cell]
-            if cluster in correction_vectors and batch in correction_vectors[cluster]:
-                offset = correction_vectors[cluster][batch]
-                offset = numpy.multiply(offset,atten)
-                xvec = numpy.add(xvec,offset)
-            self.matrix.append(xvec)
-            self.cell_order.append(cell)
-            i += 1
-
-    def cluster(self, k=12):
-        kmeans = KMeans(n_clusters=k)
-        kmeans.fit(self.matrix)
-        clusters = kmeans.labels_
-        _clusters = []
-        for cluster in clusters:
-            _clusters.append("C"+str(cluster))
-        self.clusters = _clusters
-        return _clusters
+        print("Applying correction vectors.")
+        for batch, xvec in zip(labels, self.matrix):
+            if  batch != reference:
+                offset = correction_vectors[batch]
+                xvec = numpy.add(numpy.array(xvec),offset)
+            corrected_matrix.append(xvec)
+        self.matrix = corrected_matrix
 
     def get_predictive_genes(self, adata, label, n_genes=10):
         vectors = dict()
@@ -444,31 +383,6 @@ class CellEmbedding(object):
             markers[x] = ct_sig
         return markers
 
-    def cluster_definitions(self):
-        gene_similarities = dict()
-        vectors = collections.defaultdict(list)
-        for vec, label in zip(self.matrix, self.clusters):
-            vectors[label].append(vec)
-        for label, vecs in vectors.items():
-            distances = dict()
-            cell_vector = list(numpy.mean(vecs, axis=0))
-            for gene, vector in self.embed.embeddings.items():
-                distance = float(cosine_similarity(numpy.array(cell_vector).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
-                distances[gene] = distance
-            sorted_distances = list(reversed(sorted(distances.items(), key=operator.itemgetter(1))))
-            gene_similarities[label] = [x[0] for x in sorted_distances]
-            print(label, sorted_distances[:10])
-        return gene_similarities
-
-    def cluster_definitions_as_df(self, similarities, top_n=20):
-        clusters = []
-        symbols = []
-        for key, genes in similarities.items():
-            clusters.append(key)
-            symbols.append(", ".join(genes[:top_n]))
-        df = pandas.DataFrame.from_dict({"Cluster Name":clusters, "Top Genes":symbols})
-        return df
-
     def compute_cell_similarities(self, barcode_to_label):
         vectors = dict()
         cell_similarities = dict()
@@ -482,59 +396,6 @@ class CellEmbedding(object):
                 distances[label2] = distance
             cell_similarities[label] = distances
         return cell_similarities
-
-    def plot_reduction(self, ax, pcs=None, method="TSNE", clusters=None, labels=None):
-        if type(pcs) != numpy.ndarray:
-            if method == "TSNE":
-                if method not in self.pcs:
-                    print("Running t-SNE")
-                    pca = TSNE(n_components=2, n_jobs=-1, metric="cosine")
-                    pcs = pca.fit_transform(self.matrix)
-                    pcs = numpy.transpose(pcs)
-                    print("Finished.")
-                    self.pcs[method] = pcs
-                else:
-                    print("Loading TSNE")
-                    pcs = self.pcs[method]
-            else:
-                if method not in self.pcs:
-                    print("Running UMAP")
-                    trans = umap.UMAP(random_state=42,metric='cosine').fit(self.matrix)
-                    x = trans.embedding_[:, 0]
-                    y = trans.embedding_[:, 1]
-                    pcs = [x,y]
-                    print("Finished.")
-                    self.pcs[method] = pcs
-                else:
-                    print("Loading UMAP")
-                    pcs = self.pcs[method]
-        data = {"x":pcs[0],"y":pcs[1],"Cluster": clusters}
-        df = pandas.DataFrame.from_dict(data)
-        sns.scatterplot(data=df,x="x", y="y", hue='Cluster', ax=ax,linewidth=0.1,s=13,alpha=1.0)
-        return pcs
-
-
-    def plot(self, png=None, pcs=None, method="TSNE", column=None):
-        if column:
-            column_labels = dict(zip(self.context.cells,self.context.metadata[column]))
-            labels = []
-            for key in self.data.keys():
-                labels.append(column_labels[key])
-        else:
-            labels = self.clusters
-        plt.figure(figsize = (8, 8))
-        ax1 = plt.subplot(1,1,1)
-        pcs = self.plot_reduction(ax1, pcs=pcs, clusters=labels, method=method)
-        plt.xlabel("{}-1".format(method))
-        plt.ylabel("{}-2".format(method))
-        ax1.set_xticks([])
-        ax1.set_yticks([])
-        if png:
-            plt.savefig(png)
-            plt.close()
-        else:
-            plt.show()
-        return pcs
 
     def plot_distance(self, vector, pcs=None, threshold=0.0, method="TSNE", title=None, show=True):
         if type(pcs) != numpy.ndarray:

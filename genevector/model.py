@@ -47,7 +47,7 @@ class GeneVectorModel(nn.Module):
 class GeneVector(object):
     def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, device="cpu",  k=3):
         self.dataset = dataset
-        self.dataset.create_inputs_outputs(k=k)
+        self.dataset.create_inputs_outputs()
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension
@@ -84,7 +84,7 @@ class GeneVector(object):
                     print("Epoch: {}/{} \t Batch: {}/{} \t Loss: {}".format(e, epochs, batch_i, n_batches, np.mean(self.loss_values[-20:])))
             self.mean_loss_values.append(numpy.mean(self.loss_values[-20:]))
             curr_loss = numpy.mean(self.loss_values[-20:])
-            delta = abs(curr_loss - last_loss) 
+            delta = abs(curr_loss - last_loss)
             print("Epoch",self.epoch, "\tDelta->",delta,"\tLoss:",np.mean(self.loss_values[-20:]))
             if abs(curr_loss - last_loss) < threshold:
                 print("Training complete!")

@@ -51,7 +51,7 @@ class Context(object):
         context.genes = [x.upper() for x in list(context.adata.var.index)]
         context.normalized_matrix = context.adata.X
         context.metadata = context.adata.obs
-        # context.frequency_lower_bound = frequency_lower_bound
+        context.frequency_lower_bound = frequency_lower_bound
         try:
             for column in context.metadata.columns:
                 if type(context.metadata[column][0]) == bytes:
@@ -60,10 +60,16 @@ class Context(object):
             pass
         context.cells = context.adata.obs.index
         context.cell_index, context.index_cell = Context.index_cells(context.cells)
-        context.expressed_genes = adata.var.index.tolist()#context.get_expressed_genes(context.data)
+        context.data, context.cell_to_gene = context.expression(context.normalized_matrix, \
+                            context.genes, \
+                            context.index_cell,
+                            expression=expression)
+        context.expressed_genes = context.get_expressed_genes(context.data)
         context.gene_index, context.index_gene = Context.index_geneset(context.expressed_genes)
         context.gene2id = context.gene_index
         context.id2gene = context.index_gene
+        context.gene_count = len(context.gene_frequency.keys())
+        context.adata = adata
         return context
 
     @classmethod
@@ -169,26 +175,31 @@ class GeneVectorDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
 
-    def generate_mi_scores(self,k = 4, min_pct=0.01,max_pct=0.3):
+    def generate_mi_scores(self, k=3,  min_pct=0.00,max_pct=0.75):
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
-        genes = dict()
-        adata = self.data.adata
+        bcs = dict()
+        num_cells = len(self.data.cells)
         vgenes = []
-        for gene in self.data.genes:
-            try:
-                genes[gene] = adata.X[:,adata.var.index.tolist().index(gene)].T.todense().tolist()[0]
-                vgenes.append(gene)
-            except Exception as e:
-                continue
+        for gene, bc in self.data.data.items():
+            bcs[gene] = set(bc)
+            vgenes.append(gene)
         pairs = list(itertools.combinations(vgenes, 2))
+        counts = collections.defaultdict(lambda : collections.defaultdict(int))
+        for c, p in self.data.expression.items():
+            for g,v in p.items():
+                counts[g][c] += int(v)
         for p1,p2 in tqdm.tqdm(pairs):
-            x = genes[p1]
-            y = genes[p2]
-            xmx = max(x)
-            ymx = max(y)
-            mx = max([xmx,ymx])
-            pxy= fast_histogram.histogram2d(x,y,bins=mx, range=[[0,xmx],[0,ymx]])
-            pxy = pxy / pxy.sum()
+            common = bcs[p1].intersection(bcs[p2])
+            if len(common) / num_cells < min_pct or len(common) / num_cells > max_pct:
+                continue
+            x = []
+            y = []
+            countsp1 = counts[p1]
+            countsp2 = counts[p2]
+            for c in common:
+                x.append(countsp1[c])
+                y.append(countsp2[c])
+            pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
             px = np.sum(pxy, axis=1)
             py = np.sum(pxy, axis=0)
             px_py = px[:, None] * py[None, :]

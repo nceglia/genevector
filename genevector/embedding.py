@@ -24,6 +24,8 @@ from scipy.special import softmax
 from scipy.spatial import distance
 import numpy
 import tqdm
+from scipy.sparse import csr_matrix
+
 
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from scipy.special import softmax
@@ -295,7 +297,12 @@ class CellEmbedding(object):
         weights = collections.defaultdict(list)
 
         for cell in tqdm.tqdm(adata.obs.index.tolist()):
-            cell_weights = dict(zip(adata.var.index.tolist(),adata.X[adata.obs.index.tolist().index(cell)]))
+            if type(adata.X[adata.obs.index.tolist().index(cell)]) == csr_matrix:
+                exp = adata.X[adata.obs.index.tolist().index(cell)].T.todense()
+                exp = [float(x[0]) for x in exp]
+            else:
+                exp = adata.X[adata.obs.index.tolist().index(cell)]
+            cell_weights = dict(zip(adata.var.index.tolist(),exp))
             weights = []
             vectors = []
             for g,w in cell_weights.items():

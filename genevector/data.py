@@ -175,7 +175,7 @@ class GeneVectorDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
 
-    def generate_mi_scores(self, k=3,  min_pct=0.00,max_pct=0.75):
+    def generate_mi_scores(self, k=5,  min_pct=0.01,max_pct=0.5):
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
         num_cells = len(self.data.cells)
@@ -214,10 +214,62 @@ class GeneVectorDataset(Dataset):
             mi_scores[p2][p1] = pmik
         self.mi_scores = mi_scores
 
-    def create_inputs_outputs(self, max_pct=0.75, min_pct=0.0):
+    def generate_correlation(self):
+        print("Generating matrix.")
+        vectorizer = feature_extraction.DictVectorizer(sparse=True)
+        corr_matrix = vectorizer.fit_transform(list(self.data.expression.values()))
+        corr_matrix[corr_matrix != 0] = 1
+
+        all_genes = vectorizer.feature_names_
+
+        gene_index = {w: idx for (idx, w) in enumerate(all_genes)}
+        index_gene = {idx: w for (idx, w) in enumerate(all_genes)}
+        self.data.gene2id = gene_index
+        self.data.id2gene = index_gene
+        self.data.expressed_genes = all_genes
+
+        corr_matrix = pandas.DataFrame(data=corr_matrix.todense(),columns=all_genes)
+        corr_df = corr_matrix
+
+        print("Decomposing")
+        coocc = numpy.array(corr_df.T.dot(corr_df))
+
+        corr_matrix = numpy.transpose(corr_matrix.to_numpy())
+        cov = numpy.corrcoef(corr_matrix)
+
+        self._i_idx = list()
+        self._j_idx = list()
+        self._xij = list()
+        import collections
+        self.correlation = collections.defaultdict(dict)
+
+        for gene, row in tqdm.tqdm(zip(all_genes, cov)):
+            for cgene, value in zip(all_genes, row):
+                if gene == cgene: continue
+                wi = self.data.gene2id[gene]
+                ci = self.data.gene2id[cgene]
+                self._i_idx.append(wi)
+                self._j_idx.append(ci)
+                self.correlation[gene][cgene] = value
+                if value > 0:
+                    self._xij.append(0. + value)
+                else:
+                    self._xij.append(0.)
+
+        if self.device == "cuda":
+            self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
+            self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()
+            self._xij = torch.cuda.FloatTensor(self._xij).cuda()
+        else:
+            self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
+            self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
+            self._xij = torch.FloatTensor(self._xij).to("cpu")
+        self.coocc = coocc
+        self.cov = cov
+
+    def create_inputs_outputs(self, max_pct=0.75, min_pct=0.0, k=4):
         print("Generating inputs and outputs.")
-        import pandas
-        self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct)
+        self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct, k=k)
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
         index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
         self.data.gene2id = gene_index

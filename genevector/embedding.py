@@ -443,9 +443,6 @@ class CellEmbedding(object):
         for pheno, markers in up_phenotype_markers.items():
             dists = []
             vector = self.embed.generate_vector(markers)
-            if pheno in down_phenotype_markers:
-                dvector = self.embed.generate_vector(down_phenotype_markers[pheno])
-                vector = numpy.subtract(vector, dvector)
             ovecs = []
             for oph, ovec in up_phenotype_markers.items():
                 if oph != pheno:
@@ -453,6 +450,9 @@ class CellEmbedding(object):
                     ovecs.append(ovec)
             aovec = numpy.mean(ovecs,axis=0)
             vector = numpy.subtract(vector,aovec)
+            if pheno in down_phenotype_markers:
+                dvector = self.embed.generate_vector(down_phenotype_markers[pheno])
+                vector = numpy.subtract(vector, dvector)
             for x in tqdm.tqdm(adata.obs.index):
                 dist = 1.0 - distance.cosine(mapped_components[x],vector)
                 dists.append(dist)

@@ -265,11 +265,26 @@ class GeneVectorDataset(Dataset):
     def create_inputs_outputs(self, max_pct=0.75, min_pct=0.0, c=100.):
         print("Generating inputs and outputs.")
         self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct, constant=c)
-        gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
-        index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
+        vectorizer = feature_extraction.DictVectorizer(sparse=True)
+        corr_matrix = vectorizer.fit_transform(list(self.data.expression.values()))
+        corr_matrix[corr_matrix != 0] = 1
+
+        all_genes = vectorizer.feature_names_
+
+        gene_index = {w: idx for (idx, w) in enumerate(all_genes)}
+        index_gene = {idx: w for (idx, w) in enumerate(all_genes)}
         self.data.gene2id = gene_index
         self.data.id2gene = index_gene
+        self.data.expressed_genes = all_genes
 
+        corr_matrix = pandas.DataFrame(data=corr_matrix.todense(),columns=all_genes)
+        corr_df = corr_matrix
+
+        print("Decomposing")
+        coocc = numpy.array(corr_df.T.dot(corr_df))
+
+        corr_matrix = numpy.transpose(corr_matrix.to_numpy())
+        cov = numpy.corrcoef(corr_matrix)
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()

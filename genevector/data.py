@@ -205,8 +205,8 @@ class GeneVectorDataset(Dataset):
             nzs = pxy > 0
 
             mi = np.sum(pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
-            mi_scores[p1][p2] = mi * 1000.
-            mi_scores[p2][p1] = mi * 1000.
+            mi_scores[p1][p2] = mi * c
+            mi_scores[p2][p1] = mi * c
         self.mi_scores = mi_scores
 
     def generate_correlation(self, c=100.):

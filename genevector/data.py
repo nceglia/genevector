@@ -245,7 +245,7 @@ class GeneVectorDataset(Dataset):
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                self.correlation[gene][cgene] = value #* c
+                self.correlation[gene][cgene] = value * c
                 if value > 0:
                     self._xij.append(0. + value)
                 else:

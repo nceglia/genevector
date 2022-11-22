@@ -67,6 +67,23 @@ class GeneVector(object):
         self.loss_values = list()
         self.mean_loss_values = []
 
+    def reset_model(self, output_file, emb_dimension=100, batch_size=100000, device="cpu", min_pct=0.05, max_pct=0.5, k=3, correlation=False):
+        self.output_file_name = output_file
+        self.emb_size = len(self.dataset.data.gene2id)
+        self.emb_dimension = emb_dimension
+        self.batch_size = batch_size
+        self.use_cuda = torch.cuda.is_available()
+        self.model = GeneVectorModel(self.emb_size, self.emb_dimension)
+        self.device = device
+        if self.device == "cuda" and not self.use_cuda:
+            raise ValueError("CUDA requested but no GPU available.")
+        elif self.device == "cuda":
+            self.model.cuda()
+        self.optimizer = optim.Adadelta(self.model.parameters())
+        self.loss = nn.MSELoss()
+        self.epoch = 0
+        self.loss_values = list()
+        self.mean_loss_values = []
 
     def train(self, epochs, threshold=1e-5):
         last_loss = 0.

@@ -24,7 +24,7 @@ from scipy.special import softmax
 from scipy.spatial import distance
 import numpy
 import tqdm
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, find
 
 
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -286,29 +286,30 @@ class CellEmbedding(object):
         self.embed = embed
         self.expression = self.context.expression
         self.data = collections.defaultdict(list)
-        self.weights = collections.defaultdict(list)
         self.pcs = dict()
         self.matrix = []
 
         adata = self.context.adata.copy()
         sc.pp.normalize_total(adata)
         sc.pp.log1p(adata)
-
-        weights = collections.defaultdict(list)
-
+        genes = adata.var.index.tolist()
+        normalized_matrix = csr_matrix(adata.X)
+        gene_index, index_gene = self.context.index_geneset(genes)
+        nonzero = find(normalized_matrix > 0)
+        print("Loading Expression.")
+        barcodes = adata.obs.index.tolist()
+        normalized_expression = collections.defaultdict(dict)
+        for cell, gene_i, val in tqdm.tqdm(list(zip(*nonzero))):
+            symbol = index_gene[gene_i]
+            normalized_expression[barcodes[cell]][symbol] = normalized_matrix[cell,gene_i]
+        
         for cell in tqdm.tqdm(adata.obs.index.tolist()):
-            if type(adata.X[adata.obs.index.tolist().index(cell)]) == csr_matrix:
-                exp = adata.X[adata.obs.index.tolist().index(cell)].T.todense()
-                exp = [float(x[0]) for x in exp]
-            else:
-                exp = adata.X[adata.obs.index.tolist().index(cell)]
-            cell_weights = dict(zip(adata.var.index.tolist(),exp))
-            weights = []
             vectors = []
-            for g,w in cell_weights.items():
-                if g in embed.embeddings:
-                    weights.append(w)
-                    vectors.append(embed.embeddings[g])
+            weights = []
+            for gene, weight in normalized_expression[cell].items():
+                if gene in embed.embeddings:
+                    weights.append(weight)
+                    vectors.append(embed.embeddings[gene])
             weights = numpy.array(weights)
             self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
             self.data[cell] = vectors
@@ -470,7 +471,6 @@ class CellEmbedding(object):
         for ct in probabilities:
             assign = celltypes[numpy.argmax(ct)]
             classif.append(assign)
-        umap_pts = dict(zip(list(self.data.keys()),classif))
         res = {"distances":distribution, "order":celltypes, "probabilities":probabilities}
         barcode_to_label = dict(zip(list(self.data.keys()), res["probabilities"]))
         ct = []

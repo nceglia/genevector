@@ -168,7 +168,7 @@ class GeneVectorDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
 
-    def generate_mi_scores(self, k=5,  min_pct=0.01,max_pct=0.5):
+    def generate_mi_scores(self, min_pct=0., max_pct=1., c=100.):
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
         num_cells = len(self.data.cells)
@@ -192,22 +192,24 @@ class GeneVectorDataset(Dataset):
             for c in common:
                 x.append(countsp1[c])
                 y.append(countsp2[c])
-            pxy, xedges, yedges = numpy.histogram2d(x,y,density=True)
+            pxy, xedges, yedges = numpy.histogram2d(x, y, density=True)
+            pxy = pxy / pxy.sum()
+
             px = np.sum(pxy, axis=1)
+            px = px / px.sum()
+
             py = np.sum(pxy, axis=0)
+            py = py / py.sum()
+
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
-            pmi = numpy.log2(np.sum((pxy[nzs] / px_py[nzs])))
-            k_fam = (-1. *  (k - 1.)) * numpy.log2(numpy.mean(pxy[nzs]))
-            pmik = pmi - k_fam
-            pmik = -1. * pmik
-            if numpy.isnan(pmik):
-                pmik = 0.0
-            mi_scores[p1][p2] = pmik
-            mi_scores[p2][p1] = pmik
+
+            mi = np.sum(pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
+            mi_scores[p1][p2] = mi * 1000.
+            mi_scores[p2][p1] = mi * 1000.
         self.mi_scores = mi_scores
 
-    def generate_correlation(self):
+    def generate_correlation(self, c=100.):
         print("Generating matrix.")
         vectorizer = feature_extraction.DictVectorizer(sparse=True)
         corr_matrix = vectorizer.fit_transform(list(self.data.expression.values()))
@@ -243,7 +245,7 @@ class GeneVectorDataset(Dataset):
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                self.correlation[gene][cgene] = value
+                self.correlation[gene][cgene] = value #* c
                 if value > 0:
                     self._xij.append(0. + value)
                 else:
@@ -260,13 +262,30 @@ class GeneVectorDataset(Dataset):
         self.coocc = coocc
         self.cov = cov
 
-    def create_inputs_outputs(self, max_pct=0.75, min_pct=0.0, k=4):
+    def create_inputs_outputs(self, max_pct=0.75, min_pct=0.0, c=100.):
         print("Generating inputs and outputs.")
-        self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct, k=k)
-        gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
-        index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
+        self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct, c=c)
+
+        vectorizer = feature_extraction.DictVectorizer(sparse=True)
+        corr_matrix = vectorizer.fit_transform(list(self.data.expression.values()))
+        corr_matrix[corr_matrix != 0] = 1
+
+        all_genes = vectorizer.feature_names_
+
+        gene_index = {w: idx for (idx, w) in enumerate(all_genes)}
+        index_gene = {idx: w for (idx, w) in enumerate(all_genes)}
         self.data.gene2id = gene_index
         self.data.id2gene = index_gene
+        self.data.expressed_genes = all_genes
+
+        corr_matrix = pandas.DataFrame(data=corr_matrix.todense(),columns=all_genes)
+        corr_df = corr_matrix
+
+        print("Decomposing")
+        coocc = numpy.array(corr_df.T.dot(corr_df))
+
+        corr_matrix = numpy.transpose(corr_matrix.to_numpy())
+        cov = numpy.corrcoef(corr_matrix)
 
         self._i_idx = list()
         self._j_idx = list()
@@ -281,7 +300,7 @@ class GeneVectorDataset(Dataset):
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                value = self.mi_scores[gene][cgene]
+                value = self.mi_scores[gene][cgene] #* coocc[wi,ci]
                 if value > 0:
                     self._xij.append(value)
                 else:

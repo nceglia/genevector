@@ -109,29 +109,22 @@ class Context(object):
         gene_index, index_gene = Context.index_geneset(genes)
         self.gene_frequency = collections.defaultdict(int)
         data = collections.defaultdict(list)
-        if expression == None:
-            self.expression = collections.defaultdict(dict)
-            nonzero = find(normalized_matrix > 0)
-            print("Loading Expression.")
+        self.expression = collections.defaultdict(dict)
+        nonzero = find(normalized_matrix > 0)
+        print("Loading Expression.")
 
-            nonindexed_expression = collections.defaultdict(dict)
-            for cell, gene_i, val in tqdm.tqdm(list(zip(*nonzero))):
-                symbol = index_gene[gene_i]
-                nonindexed_expression[cell][symbol] = normalized_matrix[cell,gene_i]
+        nonindexed_expression = collections.defaultdict(dict)
+        for cell, gene_i, val in tqdm.tqdm(list(zip(*nonzero))):
+            symbol = index_gene[gene_i]
+            nonindexed_expression[cell][symbol] = normalized_matrix[cell,gene_i]
 
-            print("Reindexing Cooc")
-            for cell, genes in tqdm.tqdm(list(nonindexed_expression.items())):
-                barcode = cells[cell]
-                for index, val in genes.items():
-                    self.expression[barcode][index] = val
-                    data[index].append(barcode)
-                    self.gene_frequency[index] += 1
-        else:
-            self.expression = pickle.load(open(expression,"rb"))
-            for cell, genes in tqdm.tqdm(list(self.expression.items())):
-                for gene, val in genes.items():
-                    data[gene].append(cell)
-                    self.gene_frequency[gene] += 1
+        print("Reindexing Cooc")
+        for cell, genes in tqdm.tqdm(list(nonindexed_expression.items())):
+            barcode = cells[cell]
+            for index, val in genes.items():
+                self.expression[barcode][index] = val
+                data[index].append(barcode)
+                self.gene_frequency[index] += 1
 
         data = self.filter_on_frequency(data)
         return data, self.inverse_filter(data)
@@ -204,7 +197,7 @@ class GeneVectorDataset(Dataset):
             py = np.sum(pxy, axis=0)
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
-            pmi = numpy.log2(np.sum(pxy[nzs] * (pxy[nzs] / px_py[nzs])))
+            pmi = numpy.log2(np.sum((pxy[nzs] / px_py[nzs])))
             k_fam = (-1. *  (k - 1.)) * numpy.log2(numpy.mean(pxy[nzs]))
             pmik = pmi - k_fam
             pmik = -1. * pmik

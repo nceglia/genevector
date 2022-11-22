@@ -205,8 +205,8 @@ class GeneVectorDataset(Dataset):
             nzs = pxy > 0
 
             mi = np.sum(pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
-            mi_scores[p1][p2] = mi * constant
-            mi_scores[p2][p1] = mi * constant
+            mi_scores[p1][p2] = mi #* constant
+            mi_scores[p2][p1] = mi #* constant
         self.mi_scores = mi_scores
 
     def generate_correlation(self, c=100.):
@@ -283,7 +283,7 @@ class GeneVectorDataset(Dataset):
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                value = self.mi_scores[gene][cgene]
+                value = self.mi_scores[gene][cgene] * coocc[wi,ci]
                 if value > 0:
                     self._xij.append(value)
                 else:

@@ -204,7 +204,7 @@ class GeneVectorDataset(Dataset):
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
 
-            mi = np.sum(pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
+            mi = np.sum(numpy.log2((pxy[nzs] / px_py[nzs])))
             mi_scores[p1][p2] = mi * constant
             mi_scores[p2][p1] = mi * constant
         self.mi_scores = mi_scores

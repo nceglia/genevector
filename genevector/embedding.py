@@ -290,8 +290,8 @@ class CellEmbedding(object):
         self.matrix = []
 
         adata = self.context.adata.copy()
-        # sc.pp.normalize_total(adata)
-        # sc.pp.log1p(adata)
+        sc.pp.normalize_total(adata)
+        sc.pp.log1p(adata)
         genes = adata.var.index.tolist()
         normalized_matrix = csr_matrix(adata.X)
         gene_index, index_gene = self.context.index_geneset(genes)

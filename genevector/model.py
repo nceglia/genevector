@@ -44,7 +44,7 @@ class GeneVectorModel(nn.Module):
 
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, c=100.,device="cpu", min_pct=0.0, max_pct=1., correlation=False):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, c=1.,device="cpu", min_pct=0.0, max_pct=1., correlation=False):
         self.dataset = dataset
         if correlation == False:
             self.dataset.create_inputs_outputs(min_pct=min_pct, max_pct=max_pct, c=c)

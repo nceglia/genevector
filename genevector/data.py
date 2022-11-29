@@ -183,16 +183,13 @@ class GeneVectorDataset(Dataset):
                 counts[g][c] += int(v)
         for p1,p2 in tqdm.tqdm(pairs):
             common = bcs[p1].intersection(bcs[p2])
-            #union = bcs[p1].union(bcs[p2])
             if len(common) / num_cells < min_pct or len(common) / num_cells > max_pct:
                 continue
             x = []
             y = []
-            countsp1 = counts[p1]
-            countsp2 = counts[p2]
             for c in common:
-                x.append(countsp1[c])
-                y.append(countsp2[c])
+                x.append(counts[p1][c])
+                y.append(counts[p2][c])
             pxy, xedges, yedges = numpy.histogram2d(x, y, density=True)
 
             pxy = pxy / pxy.sum()
@@ -205,10 +202,11 @@ class GeneVectorDataset(Dataset):
 
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
-            mi = np.sum(len(common) * pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
-            mi_scores[p1][p2] = mi #* constant
-            mi_scores[p2][p1] = mi #* constant
+            mi = np.sum(pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
+            mi_scores[p1][p2] = mi * constant
+            mi_scores[p2][p1] = mi * constant
         self.mi_scores = mi_scores
+
 
     def generate_correlation(self, c=100.):
         print("Generating matrix.")

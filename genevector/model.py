@@ -67,7 +67,7 @@ class GeneVector(object):
         self.loss_values = list()
         self.mean_loss_values = []
 
-    def reset_model(self, output_file, emb_dimension=100, batch_size=100000, device="cpu", min_pct=0.0, max_pct=1., k=3, correlation=False):
+    def reset_model(self, output_file, emb_dimension=100, lr=0.01, batch_size=100000, device="cpu", min_pct=0.0, max_pct=1., k=3, correlation=False):
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension
@@ -79,8 +79,8 @@ class GeneVector(object):
             raise ValueError("CUDA requested but no GPU available.")
         elif self.device == "cuda":
             self.model.cuda()
-        self.optimizer = optim.Adadelta(self.model.parameters())
-        self.loss = nn.MSELoss()
+        self.optimizer = optim.SparseAdam(self.model.parameters(), lr=lr)
+        self.loss = nn.CosineEmbeddingLoss()
         self.epoch = 0
         self.loss_values = list()
         self.mean_loss_values = []

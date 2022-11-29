@@ -211,7 +211,18 @@ class GeneEmbedding(object):
             if gene in genes:
                 vector.append(vec)
         assert len(vector) != 0, genes
-        return list(numpy.median(vector, axis=0))
+        return list(numpy.average(vector, axis=0))
+
+    def generate_weighted_vector(self, genes, weights):
+        vector = []
+        weight = []
+        for gene, vec in zip(self.genes, self.vector):
+            if gene in genes and gene in weights:
+                vector.append(vec)
+                weight.append(weights[gene])
+        assert len(vector) != 0, genes
+        return list(numpy.average(vector, axis=0, weights=weight))
+
 
     def cluster_definitions_as_df(self, top_n=20):
         similarities = self.cluster_definitions
@@ -298,15 +309,15 @@ class CellEmbedding(object):
         nonzero = find(normalized_matrix > 0)
         print("Loading Expression.")
         barcodes = adata.obs.index.tolist()
-        normalized_expression = collections.defaultdict(dict)
+        self.normalized_expression = collections.defaultdict(dict)
         for cell, gene_i, val in tqdm.tqdm(list(zip(*nonzero))):
             symbol = index_gene[gene_i]
-            normalized_expression[barcodes[cell]][symbol] = normalized_matrix[cell,gene_i]
+            self.normalized_expression[barcodes[cell]][symbol] = normalized_matrix[cell,gene_i]
 
         for cell in tqdm.tqdm(adata.obs.index.tolist()):
             vectors = []
             weights = []
-            for gene, weight in normalized_expression[cell].items():
+            for gene, weight in self.normalized_expression[cell].items():
                 if gene in embed.embeddings:
                     weights.append(weight)
                     vectors.append(embed.embeddings[gene])
@@ -437,25 +448,51 @@ class CellEmbedding(object):
                 plt.title(title)
         return distances
 
+    def generate_marker_matrix(self,adata,up_phenotype_markers,down_phenotype_markers):
+        markers = list(set(up_phenotype_markers+down_phenotype_markers))
+        matrix = []
+        adata = self.context.adata.copy()
+        sc.pp.normalize_total(adata)
+        sc.pp.log1p(adata)
+        genes = adata.var.index.tolist()
+        barcodes = adata.obs.index.tolist()
+        for cell in tqdm.tqdm(adata.obs.index.tolist()):
+            vectors = []
+            weights = []
+            for gene, weight in self.normalized_expression[cell].items():
+                if gene in markers and gene in embed.embeddings:
+                    weights.append(weight)
+                    vectors.append(embed.embeddings[gene])
+            weights = numpy.array(weights)
+            self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
+            self.data[cell] = vectors
+        return matrix
+
     def phenotype_probability(self, adata, up_phenotype_markers, down_phenotype_markers, target_col="genevector"):
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         adata = adata[list(self.data.keys())]
         probs = dict()
         for pheno, markers in up_phenotype_markers.items():
             dists = []
-            vector = self.embed.generate_vector(markers)
-            ovecs = []
-            for oph, ovec in up_phenotype_markers.items():
-                if oph != pheno:
-                    ovec = self.embed.generate_vector(ovec)
-                    ovecs.append(ovec)
-            aovec = numpy.mean(ovecs,axis=0)
-            vector = numpy.subtract(vector,aovec)
+            # ovecs = []
+            # for oph, ovec in up_phenotype_markers.items():
+            #     if oph != pheno:
+            #         ovec = self.embed.generate_vector(ovec)
+            #         ovecs.append(ovec)
+            # aovec = numpy.mean(ovecs,axis=0)
+            # vector = numpy.subtract(vector,aovec)
             if pheno in down_phenotype_markers:
                 dvector = self.embed.generate_vector(down_phenotype_markers[pheno])
                 vector = numpy.subtract(vector, dvector)
             for x in tqdm.tqdm(adata.obs.index):
-                dist = 1.0 - distance.cosine(mapped_components[x],vector)
+                weights = self.normalized_expression[x]
+                uvector = self.embed.generate_weighted_vector(markers, weights)
+                if pheno in down_phenotype_markers:
+                    dvector = self.embed.generate_weighted_vector(down_phenotype_markers, weights)
+                    vector = numpy.subtract(uvector,dvector)
+                else:
+                    vector = uvector
+                dist = cosine_similarity(mapped_components[x].reshape(-1,1), vector)
                 dists.append(dist)
             probs[pheno] = dists
         distribution = []

@@ -170,7 +170,8 @@ class GeneVectorDataset(Dataset):
         self.mi_scores = mi_scores
 
     def generate_mi_scores(self, min_pct=0., max_pct=1., constant=100.):
-        mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
+        if self.mi_scores == None:
+            self.mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
         num_cells = len(self.data.cells)
         vgenes = []
@@ -185,6 +186,8 @@ class GeneVectorDataset(Dataset):
         for p1,p2 in tqdm.tqdm(pairs):
             common = bcs[p1].intersection(bcs[p2])
             if len(common) / num_cells < min_pct or len(common) / num_cells > max_pct:
+                continue
+            if p1 in self.mi_scores and p2 in self.mi_scores[p1]:
                 continue
             x = []
             y = []
@@ -264,8 +267,7 @@ class GeneVectorDataset(Dataset):
 
     def create_inputs_outputs(self, max_pct=0.75, min_pct=0.0, c=100.):
         print("Generating inputs and outputs.")
-        if self.mi_scores == None:
-            self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct, constant=c)
+        self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct, constant=c)
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
         index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
         self.data.gene2id = gene_index

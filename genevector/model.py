@@ -47,7 +47,7 @@ class GeneVector(object):
     def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, c=1.,device="cpu", min_pct=0.0, max_pct=1., correlation=False):
         self.dataset = dataset
         if correlation == False:
-            self.dataset.create_inputs_outputs(min_pct=min_pct, max_pct=max_pct, c=c)
+            self.dataset.create_inputs_outputs(min_pct=min_pct, max_pct=max_pct)
         else:
             self.dataset.generate_correlation(c=c)
         self.output_file_name = output_file

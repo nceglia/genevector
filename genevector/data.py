@@ -161,12 +161,13 @@ class Context(object):
 
 class GeneVectorDataset(Dataset):
 
-    def __init__(self, adata, device="cpu", expression=None):
-        self.data = Context.build(adata, expression=expression)
+    def __init__(self, adata, device="cpu", mi_scores=None):
+        self.data = Context.build(adata, expression=None)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene
         self._vocab_len = len(self._word2id)
         self.device = device
+        self.mi_scores = mi_scores
 
     def generate_mi_scores(self, min_pct=0., max_pct=1., constant=100.):
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
@@ -263,7 +264,8 @@ class GeneVectorDataset(Dataset):
 
     def create_inputs_outputs(self, max_pct=0.75, min_pct=0.0, c=100.):
         print("Generating inputs and outputs.")
-        self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct, constant=c)
+        if self.mi_scores == None:
+            self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct, constant=c)
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
         index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
         self.data.gene2id = gene_index

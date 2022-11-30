@@ -171,7 +171,9 @@ class GeneVectorDataset(Dataset):
 
     def generate_mi_scores(self, min_pct=0., max_pct=1., constant=100.):
         if self.mi_scores == None:
-            self.mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
+            mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
+        else:
+            mi_scores = self.mi_scores
         bcs = dict()
         num_cells = len(self.data.cells)
         vgenes = []

@@ -170,10 +170,7 @@ class GeneVectorDataset(Dataset):
         self.mi_scores = mi_scores
 
     def generate_mi_scores(self, min_pct=0., max_pct=1., constant=100.):
-        if self.mi_scores == None:
-            mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
-        else:
-            mi_scores = self.mi_scores
+        mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
         num_cells = len(self.data.cells)
         vgenes = []
@@ -189,23 +186,17 @@ class GeneVectorDataset(Dataset):
             common = bcs[p1].intersection(bcs[p2])
             if len(common) / num_cells < min_pct or len(common) / num_cells > max_pct:
                 continue
-            if p1 in self.mi_scores and p2 in self.mi_scores[p1]:
-                continue
             x = []
             y = []
             for c in common:
                 x.append(counts[p1][c])
                 y.append(counts[p2][c])
             pxy, xedges, yedges = numpy.histogram2d(x, y, density=True)
-
             pxy = pxy / pxy.sum()
-
             px = np.sum(pxy, axis=1)
             px = px / px.sum()
-
             py = np.sum(pxy, axis=0)
             py = py / py.sum()
-
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
             mi = np.sum(pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
@@ -269,7 +260,8 @@ class GeneVectorDataset(Dataset):
 
     def create_inputs_outputs(self, max_pct=0.75, min_pct=0.0, c=100.):
         print("Generating inputs and outputs.")
-        self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct, constant=c)
+        if self.mi_scores == None:
+            self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct, constant=c)
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
         index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
         self.data.gene2id = gene_index

@@ -205,6 +205,16 @@ class GeneEmbedding(object):
             average_vector[cluster] = numpy.subtract(xvec,self.total_average_vector)
         return average_vector, gene_to_cluster
 
+    def generate_weighted_vector(self, genes, markers, weights):
+        vector = []
+        weight = []
+        for gene, vec in zip(self.genes, self.vector):
+            if gene in genes and gene in weights:
+                vector.append(weights[gene] * numpy.array(vec))
+            if gene not in genes and gene in markers and gene in weights:
+                vector.append(list(weights[gene] * numpy.negative(numpy.array(vec))))
+        return list(numpy.sum(vector, axis=0))
+
     def generate_vector(self, genes):
         vector = []
         for gene, vec in zip(self.genes, self.vector):
@@ -322,6 +332,8 @@ class CellEmbedding(object):
                     weights.append(weight)
                     vectors.append(embed.embeddings[gene])
             weights = numpy.array(weights)
+            if numpy.sum(weights) == 0:
+                continue
             self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
             self.data[cell] = vectors
         self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
@@ -472,39 +484,48 @@ class CellEmbedding(object):
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         adata = adata[list(self.data.keys())]
         probs = dict()
+
+        amarkers = []
+        for _, genes in up_phenotype_markers.items():
+            amarkers += genes
+        for _, genes in down_phenotype_markers.items():
+            amarkers += genes
+        amarkers = list(set(amarkers))
+        dataset_vector = numpy.average(self.matrix,axis=0)
+        misses = 0
         for pheno, markers in up_phenotype_markers.items():
             dists = []
-            # ovecs = []
-            # for oph, ovec in up_phenotype_markers.items():
-            #     if oph != pheno:
-            #         ovec = self.embed.generate_vector(ovec)
-            #         ovecs.append(ovec)
-            # aovec = numpy.mean(ovecs,axis=0)
-            # vector = numpy.subtract(vector,aovec)
             if pheno in down_phenotype_markers:
-                dvector = self.embed.generate_vector(down_phenotype_markers[pheno])
-                vector = numpy.subtract(vector, dvector)
+                dmark = down_phenotype_markers[pheno]
+            else:
+                dmark = []
             for x in tqdm.tqdm(adata.obs.index):
                 weights = self.normalized_expression[x]
-                uvector = self.embed.generate_weighted_vector(markers, weights)
-                if pheno in down_phenotype_markers:
-                    dvector = self.embed.generate_weighted_vector(down_phenotype_markers, weights)
-                    vector = numpy.subtract(uvector,dvector)
-                else:
-                    vector = uvector
-                dist = cosine_similarity(mapped_components[x].reshape(-1,1), vector)
-                dists.append(dist)
+                try:
+                    vector = self.embed.generate_weighted_vector(markers, amarkers, weights)
+                    if dmark != []:
+                        svector = self.embed.generate_weighted_vector(dmark, amarkers, weights)
+                        vector = numpy.subtract(vector, svector)
+                    vector = numpy.subtract(vector, dataset_vector)
+                    dvec = numpy.subtract(mapped_components[x], dataset_vector)
+                    dist = 1. - distance.cosine(mapped_components[x], numpy.array(vector))
+                    dists.append(dist)
+                except Exception as e:
+                    misses+=1
+                    dists.append(0.)
             probs[pheno] = dists
+
         distribution = []
         celltypes = []
         for k, v in probs.items():
             distribution.append(v)
             celltypes.append(k)
+        if distribution.count(0.) == len(distribution):
+            print("Bad")
         distribution = list(zip(*distribution))
         classif = []
         probabilities = []
-        scaler = StandardScaler()
-        probabilities = softmax(scaler.fit_transform(numpy.array(distribution)),axis=1)
+        probabilities = softmax(numpy.array(distribution),axis=1)
         for ct in probabilities:
             assign = celltypes[numpy.argmax(ct)]
             classif.append(assign)
@@ -526,6 +547,7 @@ class CellEmbedding(object):
             return adata
         adata = load_predictions(adata,probs)
         return adata
+
 
     def get_adata(self, min_dist=0.3, n_neighbors=50):
         adata = self.context.adata.copy()

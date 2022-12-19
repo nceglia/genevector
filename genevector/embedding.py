@@ -112,10 +112,10 @@ class GeneEmbedding(object):
         sub = gdata[gdata.obs["Metagene {}".format(mg)]!="_Other"]
         sc.pl.umap(sub,color="Metagene {}".format(mg),title=title,size=200,show=False,add_outline=False,ax=ax)
 
-        for gene, pos in zip(gdata.obs.index,gdata.obsm["X_umap"].tolist()):
-            if gene in _labels:
-                ax.text(pos[0]+.04, pos[1], str(gene), fontsize=6, alpha=0.9, fontweight="bold")
-        plt.tight_layout()
+            for gene, pos in zip(gdata.obs.index,gdata.obsm["X_umap"].tolist()):
+                if gene in _labels:
+                    ax.text(pos[0]+.04, pos[1], str(gene), fontsize=6, alpha=0.9, fontweight="bold")
+            plt.tight_layout()
 
     def plot_metagenes_scores(self, adata, metagenes, column, plot=None):
         similarity_matrix = []
@@ -480,6 +480,8 @@ class CellEmbedding(object):
             self.data[cell] = vectors
         return matrix
 
+
+
     def phenotype_probability(self, adata, up_phenotype_markers, down_phenotype_markers, target_col="genevector"):
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         adata = adata[list(self.data.keys())]
@@ -492,29 +494,18 @@ class CellEmbedding(object):
             amarkers += genes
         amarkers = list(set(amarkers))
         dataset_vector = numpy.average(self.matrix,axis=0)
-        misses = 0
         for pheno, markers in up_phenotype_markers.items():
             dists = []
-            if pheno in down_phenotype_markers:
-                dmark = down_phenotype_markers[pheno]
-            else:
-                dmark = []
             for x in tqdm.tqdm(adata.obs.index):
                 weights = self.normalized_expression[x]
                 try:
                     vector = self.embed.generate_weighted_vector(markers, amarkers, weights)
-                    if dmark != []:
-                        svector = self.embed.generate_weighted_vector(dmark, amarkers, weights)
-                        vector = numpy.subtract(vector, svector)
-                    vector = numpy.subtract(vector, dataset_vector)
                     dvec = numpy.subtract(mapped_components[x], dataset_vector)
                     dist = 1. - distance.cosine(mapped_components[x], numpy.array(vector))
                     dists.append(dist)
                 except Exception as e:
-                    misses+=1
                     dists.append(0.)
             probs[pheno] = dists
-
         distribution = []
         celltypes = []
         for k, v in probs.items():

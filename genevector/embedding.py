@@ -111,11 +111,10 @@ class GeneEmbedding(object):
         sc.pl.umap(gdata,alpha=0.5,show=False,size=100,ax=ax)
         sub = gdata[gdata.obs["Metagene {}".format(mg)]!="_Other"]
         sc.pl.umap(sub,color="Metagene {}".format(mg),title=title,size=200,show=False,add_outline=False,ax=ax)
-
-            for gene, pos in zip(gdata.obs.index,gdata.obsm["X_umap"].tolist()):
-                if gene in _labels:
-                    ax.text(pos[0]+.04, pos[1], str(gene), fontsize=6, alpha=0.9, fontweight="bold")
-            plt.tight_layout()
+        for gene, pos in zip(gdata.obs.index,gdata.obsm["X_umap"].tolist()):
+            if gene in _labels:
+                ax.text(pos[0]+.04, pos[1], str(gene), fontsize=6, alpha=0.9, fontweight="bold")
+        plt.tight_layout()
 
     def plot_metagenes_scores(self, adata, metagenes, column, plot=None):
         similarity_matrix = []

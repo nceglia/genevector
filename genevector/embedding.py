@@ -107,7 +107,7 @@ class GeneEmbedding(object):
         for gene in labels:
             _labels.append(gene)
         gdata.obs["Metagene {}".format(mg)] = highlight
-        fig,ax = plt.subplots(1,1,figsize=(8,6))m
+        fig,ax = plt.subplots(1,1,figsize=(8,6))
         sc.pl.umap(gdata,alpha=0.5,show=False,size=100,ax=ax)
         sub = gdata[gdata.obs["Metagene {}".format(mg)]!="_Other"]
         sc.pl.umap(sub,color="Metagene {}".format(mg),title=title,size=200,show=False,add_outline=False,ax=ax)

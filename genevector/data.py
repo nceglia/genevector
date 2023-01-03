@@ -280,7 +280,7 @@ class GeneVectorDataset(Dataset):
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                value = self.mi_scores[gene][cgene]
+                value = self.mi_scores[gene][cgene] * c
                 if value > 0:
                     self._xij.append(value)
                 else:

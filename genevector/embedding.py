@@ -92,6 +92,14 @@ class GeneEmbedding(object):
         sc.tl.umap(gdata)
         return gdata
 
+    def plot_similarities(self, gene, n_genes=10, save=None):
+        df = self.compute_similarities(gene).head(n_genes)
+        fig,ax = plt.subplots(1,1,figsize=(3,6))
+        sns.barplot(data=df,y="Gene",x="Similarity",palette="magma_r",ax=ax)
+        ax.set_title("{} Similarity".format(gene))
+        if save != None:
+            plt.savefig(save)
+
     def plot_metagene(self, gdata, mg=None, title="Gene Embedding"):
         highlight = []
         labels = []
@@ -416,7 +424,7 @@ class CellEmbedding(object):
     def compute_cell_similarities(self, barcode_to_label):
         vectors = dict()
         cell_similarities = dict()
-        vectors, labels = self._cell_vectors(barcode_to_label)
+        vectors, _ = self._cell_vectors(barcode_to_label)
         for label, vector in vectors.items():
             distances = dict()
             for label2, vector2 in vectors.items():
@@ -480,7 +488,6 @@ class CellEmbedding(object):
         return matrix
 
 
-
     def phenotype_probability(self, adata, up_phenotype_markers, down_phenotype_markers, target_col="genevector"):
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         adata = adata[list(self.data.keys())]
@@ -498,7 +505,7 @@ class CellEmbedding(object):
             for x in tqdm.tqdm(adata.obs.index):
                 weights = self.normalized_expression[x]
                 try:
-                    vector = self.embed.generate_weighted_vector(markers, amarkers, weights)
+                    vector = generate_weighted_vector(self.embed, markers, amarkers, weights)
                     dvec = numpy.subtract(mapped_components[x], dataset_vector)
                     dist = 1. - distance.cosine(mapped_components[x], numpy.array(vector))
                     dists.append(dist)
@@ -510,8 +517,7 @@ class CellEmbedding(object):
         for k, v in probs.items():
             distribution.append(v)
             celltypes.append(k)
-        if distribution.count(0.) == len(distribution):
-            print("Bad")
+
         distribution = list(zip(*distribution))
         classif = []
         probabilities = []
@@ -537,6 +543,7 @@ class CellEmbedding(object):
             return adata
         adata = load_predictions(adata,probs)
         return adata
+
 
 
     def get_adata(self, min_dist=0.3, n_neighbors=50):

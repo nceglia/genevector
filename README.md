@@ -9,9 +9,6 @@ Install using pip
 pip install genevector
 ```
 or install from Github
-
-Prerequisite software:
- - Torch: https://pytorch.org/get-started/locally/ 
 ```
 python3 -m venv gvenv
 source gvenv/bin/activate

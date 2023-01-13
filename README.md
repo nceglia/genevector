@@ -97,7 +97,7 @@ adata = cembed.get_adata()
 
 #### Scoring Cells by Metagene
 
-Using the previously identified metagenes, its is possible to score expression for each metagene against all cells using the GeneEmbedding function ```score_metagenes``` with the cell-based AnnData object. To plot a heatmap of all metagenes over a set of cell labels, use the ```plot_metagenes_scores``` function. Metagenes are scored with the Scanpy ```sc.tl.score_genes``` function.
+To score expression for each metagene against all cells, we can call the GeneEmbedding function ```score_metagenes``` with the cell-based AnnData object. To plot a heatmap of all metagenes over a set of cell labels, use the ```plot_metagenes_scores``` function. Metagenes are scored with the Scanpy ```sc.tl.score_genes``` function.
 
 ```
 embed.score_metagenes(adata, metagenes)

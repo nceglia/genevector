@@ -87,7 +87,7 @@ embed.plot_metagene(gdata, mg=isg_metagene)
 
 ### Loading the Cell Embedding
 
-Using the GeneEmbedding object and the GeneVectorDataset object, a CellEmbedding object can be instantiated and used to produce a Scanpy AnnData object with ```get_adata```. This method stores cell embedding under ```X_genevector``` in layers and generates a UMAP embedding using Scanpy. Scanpy funtionality can be used to visualize UMAPS (```sc.pl.umap```). 
+Using the GeneEmbedding object and the GeneVectorDataset object, a CellEmbedding object can be instantiated and used to produce a Scanpy AnnData object with ```get_adata```. This method stores cell embedding under ```X_genevector``` in layers and generates a UMAP embedding using Scanpy. Scanpy functionality can be used to visualize UMAPS (```sc.pl.umap```). 
 
 ```
 cembed = CellEmbedding(dataset, embed)

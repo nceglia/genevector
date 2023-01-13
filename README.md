@@ -1,7 +1,4 @@
 # GeneVector
-## Vector representations of gene co-expression in single cell RNAseq.
-
-https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
 
 ## Installation
 

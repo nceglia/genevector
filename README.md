@@ -45,7 +45,7 @@ import scanpy as sc
 dataset = GeneVectorDataset(adata, device="cuda")
 ```
 
-#### Training gene vectors.
+### Training GeneVector
 After loading the expression, GeneVector will keep the mutual information between genes *if* a GeneVector object is instantiated (like below). This object is only required if you wish to train a model. Model training times vary depending on datasize. The 10k PBMC dataset can be trained in less than five minutes. ```emb_dimension`` sets the size of the learned gene vectors. Smaller values decrease training time, but values smaller than 50 may not provide optimal results.
 
 ```
@@ -54,10 +54,10 @@ cmps = GeneVector(dataset,
                   emb_dimension=100,
                   threshold=1e-6,
                   device="cuda")
-cmps.train(200, threshold=1e-6) # run for 200 iterations or loss delta below 1e-6.
+cmps.train(1000, threshold=1e-6) # run for 1000 iterations or loss delta below 1e-6.
 ```
 
-#### Loading results.
+### Loading Embeddings
 After training, two vector files are produced (for input and output weights). It is recommended to take the average of both weights, but the user is left with the option if choosing a single weight matrix ("1" or "2"). The GeneEmbedding class has several analysis and visualization methods listed below.
 
 ```

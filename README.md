@@ -55,6 +55,12 @@ cmps = GeneVector(dataset,
 cmps.train(1000, threshold=1e-6) # run for 1000 iterations or loss delta below 1e-6.
 ```
 
+To understand model convergence, a loss plot by epoch can be genereated.
+
+```
+cmps.plot()
+```
+
 ### Loading Gene Embedding
 After training, two vector files are produced (for input and output weights). It is recommended to take the average of both weights ```vector="average"```). The GeneEmbedding class has several important analysis and visualization methods listed below.
 

@@ -2,7 +2,7 @@
 
 https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
 
-### Install:
+## Installation
 
 Install using pip
 ```
@@ -15,24 +15,24 @@ source gvenv/bin/activate
 python3 pip install -r requirements.txt
 python3 setup.py install
 ```
-### Example Tutorials (see "example" directory)
+## Tutorials (see "example" directory)
 
 1. PBMC workflow: Identification of interferon stimulated metagene and cell type annotation.
 2. TICA workflow: Cell type assignment.
 3. SPECTRUM workflow: Vector arithmetic for site specific metagenes.
 4. FITNESS workflow: Identifying increasing metagenes in time series.
 
-Code is given to download example data directly from Google Drive using *gdown*.
+Example data can be downloaded within Jupyter notebooks from Google Drive using *gdown*.
 ```
 pip install gdown
 ```
-Additionally the data is available for download directly:
+The data is available for download directly:
 [H5ads](https://drive.google.com/drive/folders/1ZRsdnlu9MSaRm4t_w_glD5XTqrY6CnIY?usp=sharing)
 
 
-### GeneVector Workflows
+## GeneVector Workflow
 
-#### Loading scanpy dataset into GeneVector.
+### Loading scanpy dataset into GeneVector.
 GeneVector makes use of Scanpy anndata objects and requires that the raw count data be loaded into .X matrix. It is highly recommended to subset genes using the *seurat_v3* flavor in Scanpy. The ```device="cuda"``` flag should be omitted if there is no GPU available. All downstream analysis requires a GeneVectorDataset object.
 
 ```

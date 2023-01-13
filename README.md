@@ -55,7 +55,7 @@ cmps = GeneVector(dataset,
 cmps.train(1000, threshold=1e-6) # run for 1000 iterations or loss delta below 1e-6.
 ```
 
-To understand model convergence, a loss plot by epoch can be genereated.
+To understand model convergence, a loss plot by epoch can be generated.
 
 ```
 cmps.plot()

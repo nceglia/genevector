@@ -97,7 +97,7 @@ cembed.batch_correct(column="sample",reference="control")
 adata = cembed.get_adata()
 ```
 
-### Scoring Metagenes
+#### Scoring Cells by Metagene
 
 Using the previously identified metagenes, its is possible to score expression for each metagene against all cells using the GeneEmbedding function ```score_metagenes``` with the cell-based AnnData object. To plot a heatmap of all metagenes over a set of cell labels, use the ```plot_metagenes_scores``` function. Metagenes are scored with the Scanpy ```sc.tl.score_genes``` function.
 
@@ -106,7 +106,7 @@ embed.score_metagenes(adata, metagenes)
 embed.plot_metagenes_scores(adata,mgs,"cell_type")
 ```
 
-### Performing Cell Type Assignment
+#### Performing Cell Type Assignment
 
 Using a dictionary of cell type annotations to marker genes, each cell can be classified using the CellEmbedding function ```phenotype_probability```. This function returns a new annotated AnnData object, where the resulting classification can be found in ```.obs["genevector"]``` (user can also supply a column name using ```column=```. A separate column in the obs dataframe is created to hold the pseudo-probabilities for each cell type. These probabilties can be shown on a UMAP using standard the Scanpy function ```sc.pl.umap```.
 
@@ -122,4 +122,4 @@ prob_cols = [x for x in annotated_adata.obs.columns.tolist() if "Pseudo-probabil
 sc.pl.umap(annotated_adata,color=prob_cols+["genevector"],size=25)
 ```
 
-### All additional analyses described in the manuscript, including comparisons to LDVAE and CellAssign, can be found in Jupyter notebooks in the examples directory.
+##### *All additional analyses described in the manuscript, including comparisons to LDVAE and CellAssign, can be found in Jupyter notebooks in the examples directory.*

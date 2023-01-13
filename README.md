@@ -1,3 +1,4 @@
+# GeneVector
 ## Vector representations of gene co-expression in single cell RNAseq.
 
 https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
@@ -29,7 +30,6 @@ pip install gdown
 The data is available for download directly:
 [H5ads](https://drive.google.com/drive/folders/1ZRsdnlu9MSaRm4t_w_glD5XTqrY6CnIY?usp=sharing)
 
-
 ## GeneVector Workflow
 
 ### Loading scanpy dataset into GeneVector.
@@ -57,7 +57,7 @@ cmps = GeneVector(dataset,
 cmps.train(1000, threshold=1e-6) # run for 1000 iterations or loss delta below 1e-6.
 ```
 
-### Loading Embeddings
+### Loading Gene Embedding
 After training, two vector files are produced (for input and output weights). It is recommended to take the average of both weights, but the user is left with the option if choosing a single weight matrix ("1" or "2"). The GeneEmbedding class has several analysis and visualization methods listed below.
 
 ```
@@ -65,33 +65,61 @@ gembed = GeneEmbedding("genes.vec", dataset, vector="average")
 ```
 
 #### Compute gene similarities.
-A pandas dataframe can be generated or a figure with a specified number of the most similar genes to any gene query in the AnnData object.
-```
-df = gembed.compute_similarities("CD8A")
-gembed.plot_similarities("CD8A",n_genes=10)
-```
-
-#### Generate Metagenes.
+A pandas dataframe can be generated using ```compute_similarities``` that includes the most similar genes and their cosine similarities for a given gene query. A barplot figure with a specified number of the most similar genes can be generated using ```plots_similarities```.
 
 ```
 df = gembed.compute_similarities("CD8A")
 gembed.plot_similarities("CD8A",n_genes=10)
 ```
 
-#### Batch Correct and Get Scanpy AnnData Object
+#### Metagenes.
+```get_adata``` produces and AnnData object that houses the gene embedding. This allows the use of Scanpy and AnnData visualization functions. The resolution parameter is passed directly to ```sc.tl.leiden``` to cluster the co-expression graph. ```get_metagenes``` returns a dictionary that stores each metagene as a list associated with an id. For a given id, the metagene can be visualized on a UMAP embedding using the ```plot_metagene``` function.
+
 ```
-cembed.batch_correct(column="sample")
+gdata = embed.get_adata(resolution=40)
+metagenes = embed.get_metagenes(gdata)
+embed.plot_metagene(gdata, mg=isg_metagene)
+```
+
+### Loading a Cell Embedding
+
+Using the GeneEmbedding object and the GeneVectorDataset object, a CellEmbedding object can be instantiated and used to produce a Scanpy AnnData object with ```get_adata```. The cell embedding is stored under ```X_genevector``` in layers. Scanpy funtionality can be used to visualize UMAPS (```sc.pl.umap```). 
+
+```
+cembed = CellEmbedding(dataset, embed)
 adata = cembed.get_adata()
 ```
 
-#### Get Gene Embedding and Find Metagenes
+The cell embedding can be batch corrected using ```cembed.batch_correct```. The user is required to select a valid column present in the *obs* dataframe and specify a reference label.
+
 ```
-gdata = embed.get_adata()
-metagenes = embed.get_metagenes(gdata)
+cembed.batch_correct(column="sample",reference="control")
+adata = cembed.get_adata()
 ```
 
+### Scoring Metagenes
 
+Using the previously identified metagenes, its is possible to score expression for each metagene against all cells using the GeneEmbedding function ```score_metagenes``` with the cell-based AnnData object. To plot a heatmap of all metagenes over a set of cell labels, use the ```plot_metagenes_scores``` function. Metagenes are scored with the Scanpy ```sc.tl.score_genes``` function.
 
+```
+embed.score_metagenes(adata, metagenes)
+embed.plot_metagenes_scores(adata,mgs,"cell_type")
+```
 
+### Performing Cell Type Assignment
 
+Using a dictionary of cell type annotations to marker genes, each cell can be classified using the CellEmbedding function ```phenotype_probability```. This function returns a new annotated AnnData object, where the resulting classification can be found in ```.obs["genevector"]``` (user can also supply a column name using ```column=```. A separate column in the obs dataframe is created to hold the pseudo-probabilities for each cell type. These probabilties can be shown on a UMAP using standard the Scanpy function ```sc.pl.umap```.
 
+```
+markers = dict()
+markers["T Cell"] = ["CD3D","CD3G","CD3E","TRAC","IL32","CD2"]
+markers["B/Plasma"] = ["CD79A","CD79B","MZB1","CD19","BANK1"]
+markers["Myeloid"] = ["LYZ","CST3","AIF1","CD68","C1QA","C1QB","C1QC"]
+
+annotated_adata = cembed.phenotype_probability(adata,markers)
+
+prob_cols = [x for x in annotated_adata.obs.columns.tolist() if "Pseudo-probability" in x]
+sc.pl.umap(annotated_adata,color=prob_cols+["genevector"],size=25)
+```
+
+### All additional analyses described in the manuscript, including comparisons to LDVAE and CellAssign, can be found in Jupyter notebooks in the examples directory.

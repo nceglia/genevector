@@ -24,8 +24,8 @@ Example data can be downloaded within Jupyter notebooks from Google Drive using 
 ```
 pip install gdown
 ```
-The data is available for download directly:
-[H5ads](https://drive.google.com/drive/folders/1ZRsdnlu9MSaRm4t_w_glD5XTqrY6CnIY?usp=sharing)
+The data is available for download directly
+[here](https://drive.google.com/drive/folders/1ZRsdnlu9MSaRm4t_w_glD5XTqrY6CnIY?usp=sharing).
 
 ## GeneVector Workflow
 

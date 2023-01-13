@@ -43,7 +43,7 @@ dataset = GeneVectorDataset(adata, device="cuda")
 ```
 
 ### Training GeneVector
-After loading the expression, GeneVector will keep the mutual information between genes *if* a GeneVector object is instantiated (like below). This object is only required if you wish to train a model. Model training times vary depending on datasize. The 10k PBMC dataset can be trained in less than five minutes. ```emb_dimension`` sets the size of the learned gene vectors. Smaller values decrease training time, but values smaller than 50 may not provide optimal results.
+After loading the expression, creating a GeneVector object will compute the mutual information between genes (can take up to 15 min for a dataset of 250k cells). This object is only required if you wish to train a model. Model training times vary depending on datasize. The 10k PBMC dataset can be trained in less than five minutes. ```emb_dimension`` sets the size of the learned gene vectors. Smaller values decrease training time, but values smaller than 50 may not provide optimal results.
 
 ```
 cmps = GeneVector(dataset,
@@ -55,13 +55,13 @@ cmps.train(1000, threshold=1e-6) # run for 1000 iterations or loss delta below 1
 ```
 
 ### Loading Gene Embedding
-After training, two vector files are produced (for input and output weights). It is recommended to take the average of both weights, but the user is left with the option if choosing a single weight matrix ("1" or "2"). The GeneEmbedding class has several analysis and visualization methods listed below.
+After training, two vector files are produced (for input and output weights). It is recommended to take the average of both weights ```vector="average"```). The GeneEmbedding class has several important analysis and visualization methods listed below.
 
 ```
 gembed = GeneEmbedding("genes.vec", dataset, vector="average")
 ```
 
-#### Computing gene similarities
+#### 1. Computing gene similarities
 A pandas dataframe can be generated using ```compute_similarities``` that includes the most similar genes and their cosine similarities for a given gene query. A barplot figure with a specified number of the most similar genes can be generated using ```plots_similarities```.
 
 ```
@@ -69,7 +69,7 @@ df = gembed.compute_similarities("CD8A")
 gembed.plot_similarities("CD8A",n_genes=10)
 ```
 
-#### Generating Metagenes
+#### 2. Generating Metagenes
 ```get_adata``` produces and AnnData object that houses the gene embedding. This allows the use of Scanpy and AnnData visualization functions. The resolution parameter is passed directly to ```sc.tl.leiden``` to cluster the co-expression graph. ```get_metagenes``` returns a dictionary that stores each metagene as a list associated with an id. For a given id, the metagene can be visualized on a UMAP embedding using the ```plot_metagene``` function.
 
 ```
@@ -80,14 +80,14 @@ embed.plot_metagene(gdata, mg=isg_metagene)
 
 ### Loading the Cell Embedding
 
-Using the GeneEmbedding object and the GeneVectorDataset object, a CellEmbedding object can be instantiated and used to produce a Scanpy AnnData object with ```get_adata```. The cell embedding is stored under ```X_genevector``` in layers. Scanpy funtionality can be used to visualize UMAPS (```sc.pl.umap```). 
+Using the GeneEmbedding object and the GeneVectorDataset object, a CellEmbedding object can be instantiated and used to produce a Scanpy AnnData object with ```get_adata```. This method stores cell embedding under ```X_genevector``` in layers and generates a UMAP embedding using Scanpy. Scanpy funtionality can be used to visualize UMAPS (```sc.pl.umap```). 
 
 ```
 cembed = CellEmbedding(dataset, embed)
 adata = cembed.get_adata()
 ```
 
-The cell embedding can be batch corrected using ```cembed.batch_correct```. The user is required to select a valid column present in the *obs* dataframe and specify a reference label.
+The cell embedding can be batch corrected using ```cembed.batch_correct```. The user is required to select a valid column present in the *obs* dataframe and specify a reference label. This is a very fast operation.
 
 ```
 cembed.batch_correct(column="sample",reference="control")

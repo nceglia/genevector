@@ -112,7 +112,7 @@ embed.plot_metagenes_scores(adata,mgs,"cell_type")
 
 #### Performing Cell Type Assignment
 
-Using a dictionary of cell type annotations to marker genes, each cell can be classified using the CellEmbedding function ```phenotype_probability```. This function returns a new annotated AnnData object, where the resulting classification can be found in ```.obs["genevector"]``` (user can also supply a column name using ```column=```. A separate column in the obs dataframe is created to hold the pseudo-probabilities for each cell type. These probabilties can be shown on a UMAP using standard the Scanpy function ```sc.pl.umap```.
+Using a dictionary of cell type annotations to marker genes, each cell can be classified using the CellEmbedding function ```phenotype_probability```. This function returns a new annotated AnnData object, where the resulting classification can be found in ```.obs["genevector"]``` (the user can also supply a column name using ```column=```). A separate column in the obs dataframe is created to hold the pseudo-probabilities for each cell type. These probabilties can be shown on a UMAP using standard the Scanpy function ```sc.pl.umap```.
 
 ```
 markers = dict()

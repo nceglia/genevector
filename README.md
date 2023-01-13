@@ -64,7 +64,7 @@ After training, two vector files are produced (for input and output weights). It
 gembed = GeneEmbedding("genes.vec", dataset, vector="average")
 ```
 
-#### Compute gene similarities.
+#### Computing gene similarities
 A pandas dataframe can be generated using ```compute_similarities``` that includes the most similar genes and their cosine similarities for a given gene query. A barplot figure with a specified number of the most similar genes can be generated using ```plots_similarities```.
 
 ```
@@ -72,7 +72,7 @@ df = gembed.compute_similarities("CD8A")
 gembed.plot_similarities("CD8A",n_genes=10)
 ```
 
-#### Metagenes.
+#### Generating Metagenes
 ```get_adata``` produces and AnnData object that houses the gene embedding. This allows the use of Scanpy and AnnData visualization functions. The resolution parameter is passed directly to ```sc.tl.leiden``` to cluster the co-expression graph. ```get_metagenes``` returns a dictionary that stores each metagene as a list associated with an id. For a given id, the metagene can be visualized on a UMAP embedding using the ```plot_metagene``` function.
 
 ```
@@ -81,7 +81,7 @@ metagenes = embed.get_metagenes(gdata)
 embed.plot_metagene(gdata, mg=isg_metagene)
 ```
 
-### Loading a Cell Embedding
+### Loading the Cell Embedding
 
 Using the GeneEmbedding object and the GeneVectorDataset object, a CellEmbedding object can be instantiated and used to produce a Scanpy AnnData object with ```get_adata```. The cell embedding is stored under ```X_genevector``` in layers. Scanpy funtionality can be used to visualize UMAPS (```sc.pl.umap```). 
 

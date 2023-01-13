@@ -1,4 +1,3 @@
-![alt text](https://github.com/nceglia/genevector/blob/main/logo.png?raw=true)
 ## Vector representations of gene co-expression in single cell RNAseq.
 
 https://www.biorxiv.org/content/10.1101/2022.04.22.487554v1
@@ -19,19 +18,22 @@ source gvenv/bin/activate
 python3 pip install -r requirements.txt
 python3 setup.py install
 ```
-### Example Tutorial (see "example")
-
-Requires gdown ```pip install gdown``` to download all data except PBMCs.
+### Example Tutorials (see "example" directory)
 
 1. PBMC workflow: Identification of interferon stimulated metagene and cell type annotation.
 2. TICA workflow: Cell type assignment.
 3. SPECTRUM workflow: Vector arithmetic for site specific metagenes.
 4. FITNESS workflow: Identifying increasing metagenes in time series.
 
-Data:
-[H5ads and Pre-built Embeddings](https://drive.google.com/drive/folders/1ZRsdnlu9MSaRm4t_w_glD5XTqrY6CnIY?usp=sharing)
+Code is given to download example data directly from Google Drive using *gdown*.
+```
+pip install gdown
+```
+Additionally the data is available for download directly:
+[H5ads](https://drive.google.com/drive/folders/1ZRsdnlu9MSaRm4t_w_glD5XTqrY6CnIY?usp=sharing)
 
-Launch `jupyter notebook` inside /example directory after installing GeneVector.
+
+### GeneVector Workflows
 
 #### Loading scanpy dataset into GeneVector.
 GeneVector makes use of Scanpy anndata objects and requires that the raw count data be loaded into .X matrix. It is highly recommended to subset genes using the *seurat_v3* flavor in Scanpy. The ```device="cuda"``` flag should be omitted if there is no GPU available. All downstream analysis requires a GeneVectorDataset object.

@@ -44,7 +44,7 @@ dataset = GeneVectorDataset(adata, device="cuda")
 ```
 
 ### Training GeneVector
-After loading the expression, creating a GeneVector object will compute the mutual information between genes (can take up to 15 min for a dataset of 250k cells). This object is only required if you wish to train a model. Model training times vary depending on datasize. The 10k PBMC dataset can be trained in less than five minutes. ```emb_dimension`` sets the size of the learned gene vectors. Smaller values decrease training time, but values smaller than 50 may not provide optimal results.
+After loading the expression, creating a GeneVector object will compute the mutual information between genes (can take up to 15 min for a dataset of 250k cells). This object is only required if you wish to train a model. Model training times vary depending on datasize. The 10k PBMC dataset can be trained in less than five minutes. ```emb_dimension``` sets the size of the learned gene vectors. Smaller values decrease training time, but values smaller than 50 may not provide optimal results.
 
 ```
 cmps = GeneVector(dataset,

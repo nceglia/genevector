@@ -1,4 +1,4 @@
-# GeneVector
+![alt text](https://github.com/nceglia/genevector/blob/main/logo.png?raw=true)
 
 ## Installation
 

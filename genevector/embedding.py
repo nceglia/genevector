@@ -1,48 +1,23 @@
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.manifold import TSNE
-from sklearn.cluster import AgglomerativeClustering, KMeans
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.cluster import AgglomerativeClustering
-from sklearn import metrics
+from sklearn.preprocessing import MinMaxScaler
 import seaborn as sns
-from sklearn.preprocessing import MaxAbsScaler
-from scipy.special import softmax
 import matplotlib.pyplot as plt
-import matplotlib
-import seaborn as sns
 import pandas
-import matplotlib.cm as cm
 import umap
 import tqdm
 import scanpy as sc
-import matplotlib.gridspec as gridspec
 import networkx as nx
-import matplotlib as mpl
 from sklearn.metrics import confusion_matrix
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from scipy.special import softmax
 from scipy.spatial import distance
 import numpy
-import tqdm
 from scipy.sparse import csr_matrix, find
-
-
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from scipy.special import softmax
-from scipy.spatial import distance
-import numpy
-import tqdm
-
-import numpy
+import numpy as np
 import operator
-import random
-import pickle
 import collections
-import sys
 import os
 import pandas as pd
-
-
 import gc
 
 class GeneEmbedding(object):
@@ -94,7 +69,7 @@ class GeneEmbedding(object):
 
     def plot_similarities(self, gene, n_genes=10, save=None):
         df = self.compute_similarities(gene).head(n_genes)
-        fig,ax = plt.subplots(1,1,figsize=(3,6))
+        _,ax = plt.subplots(1,1,figsize=(3,6))
         sns.barplot(data=df,y="Gene",x="Similarity",palette="magma_r",ax=ax)
         ax.set_title("{} Similarity".format(gene))
         if save != None:
@@ -115,7 +90,7 @@ class GeneEmbedding(object):
         for gene in labels:
             _labels.append(gene)
         gdata.obs["Metagene {}".format(mg)] = highlight
-        fig,ax = plt.subplots(1,1,figsize=(8,6))
+        _,ax = plt.subplots(1,1,figsize=(8,6))
         sc.pl.umap(gdata,alpha=0.5,show=False,size=100,ax=ax)
         sub = gdata[gdata.obs["Metagene {}".format(mg)]!="_Other"]
         sc.pl.umap(sub,color="Metagene {}".format(mg),title=title,size=200,show=False,add_outline=False,ax=ax)
@@ -125,9 +100,7 @@ class GeneEmbedding(object):
         plt.tight_layout()
 
     def plot_metagenes_scores(self, adata, metagenes, column, plot=None):
-        similarity_matrix = []
         plt.figure(figsize = (5, 13))
-        barcode_to_label = dict(zip(adata.obs.index, adata.obs[column]))
         matrix = []
         meta_genes = []
         cfnum = 1
@@ -157,12 +130,16 @@ class GeneEmbedding(object):
 
     def score_metagenes(self,adata ,metagenes):
         for p, genes in metagenes.items():
-            sc.tl.score_genes(adata,score_name=str(p)+"_SCORE",gene_list=genes)
-            scores = numpy.array(adata.obs[str(p)+"_SCORE"].tolist()).reshape(-1,1)
-            scaler = MinMaxScaler()
-            scores = scaler.fit_transform(scores)
-            scores = list(scores.reshape(1,-1))[0]
-            adata.obs[str(p)+"_SCORE"] = scores
+            try:
+                sc.tl.score_genes(adata,score_name=str(p)+"_SCORE",gene_list=genes)
+                scores = numpy.array(adata.obs[str(p)+"_SCORE"].tolist()).reshape(-1,1)
+                scaler = MinMaxScaler()
+                scores = scaler.fit_transform(scores)
+                scores = list(scores.reshape(1,-1))[0]
+                adata.obs[str(p)+"_SCORE"] = scores
+            except Exception as e:
+                adata.obs[str(p)+"_SCORE"] = 0.
+            
 
     def get_metagenes(self, gdata):
         metagenes = collections.defaultdict(list)
@@ -214,13 +191,13 @@ class GeneEmbedding(object):
 
     def generate_weighted_vector(self, genes, markers, weights):
         vector = []
-        weight = []
         for gene, vec in zip(self.genes, self.vector):
             if gene in genes and gene in weights:
                 vector.append(weights[gene] * numpy.array(vec))
             if gene not in genes and gene in markers and gene in weights:
                 vector.append(list(weights[gene] * numpy.negative(numpy.array(vec))))
         return list(numpy.sum(vector, axis=0))
+
 
     def generate_vector(self, genes):
         vector = []
@@ -405,7 +382,6 @@ class CellEmbedding(object):
         comps = collections.defaultdict(list)
         for bc,x in zip(adata.obs.index,adata.obs[label]):
             comps[x].append(mapped_components[bc])
-        mean_vecs = []
         for x, vec in comps.items():
             ovecs = []
             vec = numpy.average(vec,axis=0)
@@ -487,37 +463,46 @@ class CellEmbedding(object):
             self.data[cell] = vectors
         return matrix
 
-
-    def phenotype_probability(self, adata, up_phenotype_markers, down_phenotype_markers, target_col="genevector"):
+    def phenotype_probability(self, adata, up_phenotype_markers, target_col="genevector"):
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
-        adata = adata[list(self.data.keys())]
+        vkeys = set(self.data.keys()).intersection(set(adata.obs.index.tolist()))
+        adata = adata[list(vkeys)]
         probs = dict()
+        hidden_d = len(list(embed.embeddings.values())[0])
+        def generate_weighted_vector(self, genes, markers, weights):
+            vector = []
+            for gene, vec in zip(self.genes, self.vector):
+                if gene in genes and gene in weights:
+                    vector.append(weights[gene] * numpy.array(vec))
+            if len(vector) != hidden_d:
+                vec = list(numpy.zeros(100))
+            else:
+                vec = list(numpy.sum(vector, axis=0))
+            return vec
 
         amarkers = []
         for _, genes in up_phenotype_markers.items():
             amarkers += genes
-        for _, genes in down_phenotype_markers.items():
-            amarkers += genes
+        # for _, genes in down_phenotype_markers.items():
+        #     amarkers += genes
         amarkers = list(set(amarkers))
-        dataset_vector = numpy.average(self.matrix,axis=0)
+        # dataset_vector = numpy.average(self.matrix,axis=0)
         for pheno, markers in up_phenotype_markers.items():
             dists = []
             for x in tqdm.tqdm(adata.obs.index):
                 weights = self.normalized_expression[x]
-                try:
-                    vector = generate_weighted_vector(self.embed, markers, amarkers, weights)
-                    dvec = numpy.subtract(mapped_components[x], dataset_vector)
+                vector = generate_weighted_vector(self.embed, markers, amarkers, weights)
+                if sum(vector) == 0.:
+                    dists.append(0.)
+                else:
                     dist = 1. - distance.cosine(mapped_components[x], numpy.array(vector))
                     dists.append(dist)
-                except Exception as e:
-                    dists.append(0.)
             probs[pheno] = dists
         distribution = []
         celltypes = []
         for k, v in probs.items():
             distribution.append(v)
             celltypes.append(k)
-
         distribution = list(zip(*distribution))
         classif = []
         probabilities = []
@@ -530,6 +515,11 @@ class CellEmbedding(object):
         ct = []
         probs = collections.defaultdict(list)
         for x in adata.obs.index:
+            if x not in barcode_to_label:
+                ct.append("Unknown")
+                for ph in res["order"]:
+                    probs[ph].append(0.)
+                continue
             ctx = res["order"][numpy.argmax(barcode_to_label[x])]
             ct.append(ctx)
             for ph, pb in zip(res["order"],barcode_to_label[x]):
@@ -543,6 +533,71 @@ class CellEmbedding(object):
             return adata
         adata = load_predictions(adata,probs)
         return adata
+
+    # def phenotype_probability(self, adata, up_phenotype_markers, down_phenotype_markers, target_col="genevector"):
+    #     mapped_components = dict(zip(list(self.data.keys()),self.matrix))
+    #     adata = adata[list(self.data.keys())]
+    #     probs = dict()
+    #     def generate_weighted_vector(self, genes, markers, weights):
+    #         vector = []
+    #         weight = []
+    #         for gene, vec in zip(self.genes, self.vector):
+    #             if gene in genes and gene in weights:
+    #                 vector.append(weights[gene] * numpy.array(vec))
+    #             if gene not in genes and gene in markers and gene in weights:
+    #                 vector.append(list(weights[gene] * numpy.negative(numpy.array(vec))))
+    #         return list(numpy.sum(vector, axis=0))
+
+    #     amarkers = []
+    #     for _, genes in up_phenotype_markers.items():
+    #         amarkers += genes
+    #     for _, genes in down_phenotype_markers.items():
+    #         amarkers += genes
+    #     amarkers = list(set(amarkers))
+    #     dataset_vector = numpy.average(self.matrix,axis=0)
+    #     for pheno, markers in up_phenotype_markers.items():
+    #         dists = []
+    #         for x in tqdm.tqdm(adata.obs.index):
+    #             weights = self.normalized_expression[x]
+    #             try:
+    #                 vector = generate_weighted_vector(self.embed, markers, amarkers, weights)
+    #                 dvec = numpy.subtract(mapped_components[x], dataset_vector)
+    #                 dist = 1. - distance.cosine(mapped_components[x], numpy.array(vector))
+    #                 dists.append(dist)
+    #             except Exception as e:
+    #                 dists.append(0.)
+    #         probs[pheno] = dists
+    #     distribution = []
+    #     celltypes = []
+    #     for k, v in probs.items():
+    #         distribution.append(v)
+    #         celltypes.append(k)
+
+    #     distribution = list(zip(*distribution))
+    #     classif = []
+    #     probabilities = []
+    #     probabilities = softmax(numpy.array(distribution),axis=1)
+    #     for ct in probabilities:
+    #         assign = celltypes[numpy.argmax(ct)]
+    #         classif.append(assign)
+    #     res = {"distances":distribution, "order":celltypes, "probabilities":probabilities}
+    #     barcode_to_label = dict(zip(list(self.data.keys()), res["probabilities"]))
+    #     ct = []
+    #     probs = collections.defaultdict(list)
+    #     for x in adata.obs.index:
+    #         ctx = res["order"][numpy.argmax(barcode_to_label[x])]
+    #         ct.append(ctx)
+    #         for ph, pb in zip(res["order"],barcode_to_label[x]):
+    #             probs[ph].append(pb)
+    #     adata.obs[target_col] = ct
+
+    #     def load_predictions(adata,probs):
+    #         for ph in probs.keys():
+    #             print(ph)
+    #             adata.obs[ph+" Pseudo-probability"] = probs[ph]
+    #         return adata
+    #     adata = load_predictions(adata,probs)
+    #     return adata
 
 
 
@@ -561,16 +616,13 @@ class CellEmbedding(object):
 
     @staticmethod
     def plot_confusion_matrix(adata,label1,label2):
-        import numpy as np
-        from sklearn.metrics import confusion_matrix
-
-        gv = adata.obs[label1].tolist()
-        gt = adata.obs[label2].tolist()
-        def plot_cm(y_true, y_pred, figsize=(10,10)):
-            cm = confusion_matrix(y_true, y_pred, labels=numpy.unique(y_true))
-            cm_sum = numpy.sum(cm, axis=1, keepdims=True)
+        gv_ct = adata.obs["genevector"].tolist()
+        tica_ct = adata.obs["coarse_cell_type"].tolist()
+        def plot_cm(y_true, y_pred, figsize=(6,6)):
+            cm = confusion_matrix(y_true, y_pred, labels=np.unique(y_true))
+            cm_sum = np.sum(cm, axis=1, keepdims=True)
             cm_perc = cm / cm_sum.astype(float) * 100
-            annot = numpy.empty_like(cm).astype(str)
+            annot = np.empty_like(cm).astype(str)
             nrows, ncols = cm.shape
             for i in range(nrows):
                 for j in range(ncols):
@@ -583,12 +635,14 @@ class CellEmbedding(object):
                         annot[i, j] = ''
                     else:
                         annot[i, j] = '%.1f%%\n%d' % (p, c)
-            cm = pandas.DataFrame(cm, index=numpy.unique(y_true), columns=numpy.unique(y_true))
-            cm.index.name = 'Gene Vector'
-            cm.columns.name = 'Ground Truth'
+            cm = pd.DataFrame(cm_perc, index=np.unique(y_true), columns=np.unique(y_true))
+            cm.index.name = 'TICA - Coarse Labels'
+            cm.columns.name = 'GeneVector'
             fig, ax = plt.subplots(figsize=figsize)
             sns.heatmap(cm, annot=annot, fmt='', ax=ax)
-        plot_cm(gv,gt)
+
+        plot_cm(tica_ct,gv_ct)
+
 
     def group_cell_vectors(self, label):
         barcode_to_label = dict(zip(self.context.adata.obs.index.tolist(),self.context.adata.obs[label]))

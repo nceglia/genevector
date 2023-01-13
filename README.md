@@ -44,7 +44,7 @@ dataset = GeneVectorDataset(adata, device="cuda")
 ```
 
 ### Training GeneVector
-After loading the expression, creating a GeneVector object will compute the mutual information between genes (can take up to 15 min for a dataset of 250k cells). This object is only required if you wish to train a model. Model training times vary depending on datasize. The 10k PBMC dataset can be trained in less than five minutes. ```emb_dimension`` sets the size of the learned gene vectors. Smaller values decrease training time, but values smaller than 50 may not provide optimal results.
+After loading the expression, creating a GeneVector object will compute the mutual information between genes (can take up to 15 min for a dataset of 250k cells). This object is only required if you wish to train a model. Model training times vary depending on datasize. The 10k PBMC dataset can be trained in less than five minutes. ```emb_dimension``` sets the size of the learned gene vectors. Smaller values decrease training time, but values smaller than 50 may not provide optimal results.
 
 ```
 cmps = GeneVector(dataset,
@@ -53,6 +53,12 @@ cmps = GeneVector(dataset,
                   threshold=1e-6,
                   device="cuda")
 cmps.train(1000, threshold=1e-6) # run for 1000 iterations or loss delta below 1e-6.
+```
+
+To understand model convergence, a loss plot by epoch can be generated.
+
+```
+cmps.plot()
 ```
 
 ### Loading Gene Embedding
@@ -81,7 +87,7 @@ embed.plot_metagene(gdata, mg=isg_metagene)
 
 ### Loading the Cell Embedding
 
-Using the GeneEmbedding object and the GeneVectorDataset object, a CellEmbedding object can be instantiated and used to produce a Scanpy AnnData object with ```get_adata```. This method stores cell embedding under ```X_genevector``` in layers and generates a UMAP embedding using Scanpy. Scanpy funtionality can be used to visualize UMAPS (```sc.pl.umap```). 
+Using the GeneEmbedding object and the GeneVectorDataset object, a CellEmbedding object can be instantiated and used to produce a Scanpy AnnData object with ```get_adata```. This method stores cell embedding under ```X_genevector``` in layers and generates a UMAP embedding using Scanpy. Scanpy functionality can be used to visualize UMAPS (```sc.pl.umap```). 
 
 ```
 cembed = CellEmbedding(dataset, embed)
@@ -97,7 +103,7 @@ adata = cembed.get_adata()
 
 #### Scoring Cells by Metagene
 
-Using the previously identified metagenes, its is possible to score expression for each metagene against all cells using the GeneEmbedding function ```score_metagenes``` with the cell-based AnnData object. To plot a heatmap of all metagenes over a set of cell labels, use the ```plot_metagenes_scores``` function. Metagenes are scored with the Scanpy ```sc.tl.score_genes``` function.
+To score expression for each metagene against all cells, we can call the GeneEmbedding function ```score_metagenes``` with the cell-based AnnData object. To plot a heatmap of all metagenes over a set of cell labels, use the ```plot_metagenes_scores``` function. Metagenes are scored with the Scanpy ```sc.tl.score_genes``` function.
 
 ```
 embed.score_metagenes(adata, metagenes)
@@ -106,7 +112,7 @@ embed.plot_metagenes_scores(adata,mgs,"cell_type")
 
 #### Performing Cell Type Assignment
 
-Using a dictionary of cell type annotations to marker genes, each cell can be classified using the CellEmbedding function ```phenotype_probability```. This function returns a new annotated AnnData object, where the resulting classification can be found in ```.obs["genevector"]``` (user can also supply a column name using ```column=```. A separate column in the obs dataframe is created to hold the pseudo-probabilities for each cell type. These probabilties can be shown on a UMAP using standard the Scanpy function ```sc.pl.umap```.
+Using a dictionary of cell type annotations to marker genes, each cell can be classified using the CellEmbedding function ```phenotype_probability```. This function returns a new annotated AnnData object, where the resulting classification can be found in ```.obs["genevector"]``` (the user can also supply a column name using ```column=```). A separate column in the obs dataframe is created to hold the pseudo-probabilities for each cell type. These probabilties can be shown on a UMAP using standard the Scanpy function ```sc.pl.umap```.
 
 ```
 markers = dict()

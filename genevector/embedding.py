@@ -455,54 +455,51 @@ class CellEmbedding(object):
             vectors = []
             weights = []
             for gene, weight in self.normalized_expression[cell].items():
-                if gene in markers and gene in embed.embeddings:
-                    weights.append(weight)
-                    vectors.append(embed.embeddings[gene])
+                if gene in markers and gene in sefl.embed.embeddings:
+                    weights.append(self.embed.embeddings[gene])
             weights = numpy.array(weights)
             self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
             self.data[cell] = vectors
         return matrix
 
-    def phenotype_probability(self, adata, up_phenotype_markers, target_col="genevector"):
+    def phenotype_probability(self, adata, up_phenotype_markers, down_phenotype_markers, target_col="genevector"):
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
-        vkeys = set(self.data.keys()).intersection(set(adata.obs.index.tolist()))
-        adata = adata[list(vkeys)]
+        adata = adata[list(self.data.keys())]
         probs = dict()
-        hidden_d = len(list(embed.embeddings.values())[0])
         def generate_weighted_vector(self, genes, markers, weights):
             vector = []
             for gene, vec in zip(self.genes, self.vector):
                 if gene in genes and gene in weights:
                     vector.append(weights[gene] * numpy.array(vec))
-            if len(vector) != hidden_d:
-                vec = list(numpy.zeros(100))
-            else:
-                vec = list(numpy.sum(vector, axis=0))
-            return vec
+                if gene not in genes and gene in markers and gene in weights:
+                    vector.append(list(weights[gene] * numpy.negative(numpy.array(vec))))
+            return list(numpy.sum(vector, axis=0))
 
         amarkers = []
         for _, genes in up_phenotype_markers.items():
             amarkers += genes
-        # for _, genes in down_phenotype_markers.items():
-        #     amarkers += genes
+        for _, genes in down_phenotype_markers.items():
+            amarkers += genes
         amarkers = list(set(amarkers))
-        # dataset_vector = numpy.average(self.matrix,axis=0)
+        dataset_vector = numpy.average(self.matrix,axis=0)
         for pheno, markers in up_phenotype_markers.items():
             dists = []
             for x in tqdm.tqdm(adata.obs.index):
                 weights = self.normalized_expression[x]
-                vector = generate_weighted_vector(self.embed, markers, amarkers, weights)
-                if sum(vector) == 0.:
-                    dists.append(0.)
-                else:
+                try:
+                    vector = generate_weighted_vector(self.embed, markers, amarkers, weights)
+                    dvec = numpy.subtract(mapped_components[x], dataset_vector)
                     dist = 1. - distance.cosine(mapped_components[x], numpy.array(vector))
                     dists.append(dist)
+                except Exception as e:
+                    dists.append(0.)
             probs[pheno] = dists
         distribution = []
         celltypes = []
         for k, v in probs.items():
             distribution.append(v)
             celltypes.append(k)
+
         distribution = list(zip(*distribution))
         classif = []
         probabilities = []
@@ -515,11 +512,6 @@ class CellEmbedding(object):
         ct = []
         probs = collections.defaultdict(list)
         for x in adata.obs.index:
-            if x not in barcode_to_label:
-                ct.append("Unknown")
-                for ph in res["order"]:
-                    probs[ph].append(0.)
-                continue
             ctx = res["order"][numpy.argmax(barcode_to_label[x])]
             ct.append(ctx)
             for ph, pb in zip(res["order"],barcode_to_label[x]):
@@ -533,71 +525,6 @@ class CellEmbedding(object):
             return adata
         adata = load_predictions(adata,probs)
         return adata
-
-    # def phenotype_probability(self, adata, up_phenotype_markers, down_phenotype_markers, target_col="genevector"):
-    #     mapped_components = dict(zip(list(self.data.keys()),self.matrix))
-    #     adata = adata[list(self.data.keys())]
-    #     probs = dict()
-    #     def generate_weighted_vector(self, genes, markers, weights):
-    #         vector = []
-    #         weight = []
-    #         for gene, vec in zip(self.genes, self.vector):
-    #             if gene in genes and gene in weights:
-    #                 vector.append(weights[gene] * numpy.array(vec))
-    #             if gene not in genes and gene in markers and gene in weights:
-    #                 vector.append(list(weights[gene] * numpy.negative(numpy.array(vec))))
-    #         return list(numpy.sum(vector, axis=0))
-
-    #     amarkers = []
-    #     for _, genes in up_phenotype_markers.items():
-    #         amarkers += genes
-    #     for _, genes in down_phenotype_markers.items():
-    #         amarkers += genes
-    #     amarkers = list(set(amarkers))
-    #     dataset_vector = numpy.average(self.matrix,axis=0)
-    #     for pheno, markers in up_phenotype_markers.items():
-    #         dists = []
-    #         for x in tqdm.tqdm(adata.obs.index):
-    #             weights = self.normalized_expression[x]
-    #             try:
-    #                 vector = generate_weighted_vector(self.embed, markers, amarkers, weights)
-    #                 dvec = numpy.subtract(mapped_components[x], dataset_vector)
-    #                 dist = 1. - distance.cosine(mapped_components[x], numpy.array(vector))
-    #                 dists.append(dist)
-    #             except Exception as e:
-    #                 dists.append(0.)
-    #         probs[pheno] = dists
-    #     distribution = []
-    #     celltypes = []
-    #     for k, v in probs.items():
-    #         distribution.append(v)
-    #         celltypes.append(k)
-
-    #     distribution = list(zip(*distribution))
-    #     classif = []
-    #     probabilities = []
-    #     probabilities = softmax(numpy.array(distribution),axis=1)
-    #     for ct in probabilities:
-    #         assign = celltypes[numpy.argmax(ct)]
-    #         classif.append(assign)
-    #     res = {"distances":distribution, "order":celltypes, "probabilities":probabilities}
-    #     barcode_to_label = dict(zip(list(self.data.keys()), res["probabilities"]))
-    #     ct = []
-    #     probs = collections.defaultdict(list)
-    #     for x in adata.obs.index:
-    #         ctx = res["order"][numpy.argmax(barcode_to_label[x])]
-    #         ct.append(ctx)
-    #         for ph, pb in zip(res["order"],barcode_to_label[x]):
-    #             probs[ph].append(pb)
-    #     adata.obs[target_col] = ct
-
-    #     def load_predictions(adata,probs):
-    #         for ph in probs.keys():
-    #             print(ph)
-    #             adata.obs[ph+" Pseudo-probability"] = probs[ph]
-    #         return adata
-    #     adata = load_predictions(adata,probs)
-    #     return adata
 
 
 

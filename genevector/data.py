@@ -158,8 +158,8 @@ class GeneVectorDataset(Dataset):
             y = [c2[bc] for bc in common]
             rangex = [0,maxs[p1]]
             rangey = [0,maxs[p2]]
-            pxy = histogram2d(x,y,bins=bins,range=[rangex,rangey])
-            #pxy, _, _ = numpy.histogram2d(x,y, density=True)
+            # pxy = histogram2d(x,y,bins=bins,range=[rangex,rangey])
+            pxy, _, _ = numpy.histogram2d(x,y, density=True)
             pxy = pxy / pxy.sum()
             px = np.sum(pxy, axis=1)
             px = px / px.sum()

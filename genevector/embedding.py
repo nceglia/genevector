@@ -16,7 +16,7 @@ from scipy.sparse import csr_matrix, find
 import numpy as np
 import operator
 import collections
-import os
+import os   
 import pandas as pd
 import gc
 
@@ -289,7 +289,6 @@ class CellEmbedding(object):
     def __init__(self, dataset, embed):
         self.context = dataset.data
         self.embed = embed
-        self.expression = self.context.expression
         self.data = collections.defaultdict(list)
         self.pcs = dict()
         self.matrix = []
@@ -351,7 +350,9 @@ class CellEmbedding(object):
                 offset = correction_vectors[batch]
                 xvec = numpy.add(numpy.array(xvec),offset)
             corrected_matrix.append(xvec)
+        self.uncorrected_matrix = self.matrix
         self.matrix = corrected_matrix
+        return correction_vectors
 
     def get_predictive_genes(self, adata, label, n_genes=10):
         vectors = dict()
@@ -442,25 +443,6 @@ class CellEmbedding(object):
             if title != None:
                 plt.title(title)
         return distances
-
-    def generate_marker_matrix(self,adata,up_phenotype_markers,down_phenotype_markers):
-        markers = list(set(up_phenotype_markers+down_phenotype_markers))
-        matrix = []
-        adata = self.context.adata.copy()
-        sc.pp.normalize_total(adata)
-        sc.pp.log1p(adata)
-        genes = adata.var.index.tolist()
-        barcodes = adata.obs.index.tolist()
-        for cell in tqdm.tqdm(adata.obs.index.tolist()):
-            vectors = []
-            weights = []
-            for gene, weight in self.normalized_expression[cell].items():
-                if gene in markers and gene in sefl.embed.embeddings:
-                    weights.append(self.embed.embeddings[gene])
-            weights = numpy.array(weights)
-            self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
-            self.data[cell] = vectors
-        return matrix
 
     def phenotype_probability(self, adata, up_phenotype_markers, down_phenotype_markers, target_col="genevector"):
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))

@@ -2,12 +2,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from tqdm import tqdm
-import scanpy as sc
-import torch as t
 import numpy as np
 import numpy
 import matplotlib.pyplot as plt
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
 
 def mse_loss(inputs, targets, device):
     loss = F.mse_loss(inputs, targets, reduction='none')
@@ -44,10 +52,10 @@ class GeneVectorModel(nn.Module):
 
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, c=100.,device="cpu", min_pct=0.0, max_pct=1., correlation=False):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, c=100., bins= 40,device="cpu", correlation=False):
         self.dataset = dataset
         if correlation == False:
-            self.dataset.create_inputs_outputs(min_pct=min_pct, max_pct=max_pct, c=c)
+            self.dataset.create_inputs_outputs(c=c, bins=bins)
         else:
             self.dataset.generate_correlation(c=c)
         self.output_file_name = output_file
@@ -69,7 +77,7 @@ class GeneVector(object):
 
     def train(self, epochs, threshold=1e-5):
         last_loss = 0.
-        for _ in range(1, epochs+1):
+        for epoch in range(1, epochs+1):
             batch_i = 0
             for x_ij, i_idx, j_idx in self.dataset.get_batches(self.batch_size):
                 batch_i += 1
@@ -82,13 +90,19 @@ class GeneVector(object):
             self.mean_loss_values.append(numpy.mean(self.loss_values[-20:]))
             curr_loss = numpy.mean(self.loss_values[-20:])
             delta = abs(curr_loss - last_loss)
-            print("Epoch",self.epoch, "\tDelta->",delta,"\tLoss:",np.mean(self.loss_values[-30:]))
+            if self.epoch % 20 == 0:
+                print(bcolors.OKGREEN + "**** Epoch" + bcolors.ENDC,
+                    self.epoch, 
+                    bcolors.HEADER+"\tDelta: "+ bcolors.ENDC,
+                    round(delta,5),
+                    bcolors.OKGREEN+"\tLoss:"+bcolors.ENDC,
+                    round(np.mean(self.loss_values[-30:]),5))
             if abs(curr_loss - last_loss) < threshold:
-                print("Training complete!")
+                print(bcolors.OKCYAN + "Training complete!" + bcolors.ENDC)
                 return
             last_loss = curr_loss
             self.epoch += 1
-        print("Saving model...")
+        print(bcolors.WARNING+"Saving model..."+bcolors.ENDC)
         self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name, 0)
         self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name.replace(".vec","2.vec"), 1)
 

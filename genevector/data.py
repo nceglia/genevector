@@ -3,34 +3,26 @@ import torch
 from torch.utils.data import Dataset
 import scanpy as sc
 import numpy
-from scipy.sparse import csr_matrix, find
-import operator
+from scipy import sparse
 import itertools
-import argparse
-import random
 import pickle
-import collections
-import sys
 import os
-from sklearn.preprocessing import MinMaxScaler
-import matplotlib.pyplot as plt
-from collections import Counter
-from scipy import stats
-from sklearn.linear_model import LinearRegression
-import gc
-import matplotlib.pyplot as plt
-import scipy
 import pandas
 from sklearn import feature_extraction
-import copy
 import pandas
 import tqdm
-import statsmodels.api as sm
-from scipy.stats import nbinom
-import fast_histogram
-from sklearn import feature_extraction
 import collections
 
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
 
 class Context(object):
 
@@ -38,20 +30,17 @@ class Context(object):
         pass
 
     @classmethod
-    def build(context_class, adata, subsample=None, expression=None, frequency_lower_bound = 10, threads=2):
+    def build(context_class, adata, threads=2):
         try:
             adata.var.index = [x.decode("utf-8") for x in adata.var.index]
         except Exception as e:
             pass
         context = context_class()
-        if subsample:
-            sc.pp.subsample(adata,fraction=subsample)
         context.adata = adata
         context.threads = threads
         context.genes = [x.upper() for x in list(context.adata.var.index)]
         context.normalized_matrix = context.adata.X
         context.metadata = context.adata.obs
-        context.frequency_lower_bound = frequency_lower_bound
         try:
             for column in context.metadata.columns:
                 if type(context.metadata[column][0]) == bytes:
@@ -60,15 +49,12 @@ class Context(object):
             pass
         context.cells = context.adata.obs.index
         context.cell_index, context.index_cell = Context.index_cells(context.cells)
-        context.data, context.cell_to_gene = context.expression(context.normalized_matrix, \
-                            context.genes, \
-                            context.index_cell,
-                            expression=expression)
-        context.expressed_genes = context.get_expressed_genes(context.data)
-        context.gene_index, context.index_gene = Context.index_geneset(context.expressed_genes)
+        context.data = context.expression(context.normalized_matrix, \
+                                          context.genes, \
+                                          context.cells)
+        context.gene_index, context.index_gene = Context.index_geneset(adata.var.index.tolist())
         context.gene2id = context.gene_index
         context.id2gene = context.index_gene
-        context.gene_count = len(context.gene_frequency.keys())
         context.adata = adata
         return context
 
@@ -92,52 +78,28 @@ class Context(object):
         index_cell = {idx: w for (idx, w) in enumerate(cells)}
         return cell_index, index_cell
 
-    def get_expressed_genes(self, data):
-        return list(data.keys())
-
-    def get_expressed_genes_frequency(self, data):
-        return self.gene_frequency
-
-    def inverse_filter(self, data):
-        cell_to_gene = collections.defaultdict(list)
-        for gene, cells in data.items():
-            for cell in cells:
-                cell_to_gene[cell].append(gene)
-        return cell_to_gene
-
-    def expression(self, normalized_matrix, genes, cells, expression=None):
-        gene_index, index_gene = Context.index_geneset(genes)
-        self.gene_frequency = collections.defaultdict(int)
+    def expression(self, normalized_matrix, genes, cells):
+        cells = cells.to_numpy()
+        index_gene = numpy.array(genes)
         data = collections.defaultdict(list)
         self.expression = collections.defaultdict(dict)
-        nonzero = find(normalized_matrix > 0)
         print("Loading Expression.")
-
-        nonindexed_expression = collections.defaultdict(dict)
-        for cell, gene_i, val in tqdm.tqdm(list(zip(*nonzero))):
-            symbol = index_gene[gene_i]
-            nonindexed_expression[cell][symbol] = normalized_matrix[cell,gene_i]
-
-        print("Reindexing Cooc")
-        for cell, genes in tqdm.tqdm(list(nonindexed_expression.items())):
-            barcode = cells[cell]
-            for index, val in genes.items():
-                self.expression[barcode][index] = val
-                data[index].append(barcode)
-                self.gene_frequency[index] += 1
-
-        data = self.filter_on_frequency(data)
-        return data, self.inverse_filter(data)
-
-    def filter_on_frequency(self, data):
-        remove = []
-        for gene, frequency in self.gene_frequency.items():
-            if frequency < self.frequency_lower_bound:
-                del data[gene]
-                remove.append(gene)
-        for gene in remove:
-            del self.gene_frequency[gene]
+        normalized_matrix = normalized_matrix.tocsc()
+        normalized_matrix.eliminate_zeros()
+        print("Finding nonzero indices.")
+        row_indices, column_indices = normalized_matrix.nonzero()
+        print("Loading nonzero entries.")
+        nonzero_values = normalized_matrix.data
+        print("Indexing expression.")
+        entries = list(zip(nonzero_values, row_indices, column_indices))
+        for value, i, j in tqdm.tqdm(entries):
+            barcode = cells[i]
+            symbol = index_gene[j]
+            self.expression[barcode][symbol] = value
+            data[symbol].append(barcode)
+        print("Finished.")
         return data
+
 
     def serialize(self):
         serialized = dict()
@@ -154,44 +116,50 @@ class Context(object):
         serialized = self.serialize()
         pickle.dump(serialized, open(filename,"wb"))
 
-    def frequency(self, gene):
-        return self.gene_frequency[gene] / len(self.cells)
-
 
 
 class GeneVectorDataset(Dataset):
 
     def __init__(self, adata, device="cpu", mi_scores=None):
-        self.data = Context.build(adata, expression=None)
+        adata.X = sparse.csr_matrix(adata.X)
+        self.data = Context.build(adata)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene
         self._vocab_len = len(self._word2id)
         self.device = device
         self.mi_scores = mi_scores
 
-    def generate_mi_scores(self, min_pct=0., max_pct=1., constant=100.):
+    def generate_mi_scores(self, bins = 40):
+        from fast_histogram import histogram2d
+        print(bcolors.OKGREEN + "Getting gene pairs combinations." + bcolors.ENDC)
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
-        num_cells = len(self.data.cells)
         vgenes = []
         for gene, bc in self.data.data.items():
             bcs[gene] = set(bc)
             vgenes.append(gene)
         pairs = list(itertools.combinations(vgenes, 2))
         counts = collections.defaultdict(lambda : collections.defaultdict(int))
+
+        maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=1).T.todense())[0]))
         for c, p in self.data.expression.items():
             for g,v in p.items():
                 counts[g][c] += int(v)
+        print(bcolors.OKGREEN + "Computing MI for each pair." + bcolors.ENDC)
         for p1,p2 in tqdm.tqdm(pairs):
             common = bcs[p1].intersection(bcs[p2])
-            if len(common) / num_cells < min_pct or len(common) / num_cells > max_pct:
-                continue
-            x = []
-            y = []
-            for c in common:
-                x.append(counts[p1][c])
-                y.append(counts[p2][c])
-            pxy, xedges, yedges = numpy.histogram2d(x, y, density=True)
+            if len(common) ==0: continue
+            maxp1 = maxs[p1]
+            maxp2 = maxs[p2]
+            if maxp1 < 2 or maxp2 < 2: continue
+            c1 = counts[p1]
+            c2 = counts[p2]
+            x = [c1[bc] for bc in common]
+            y = [c2[bc] for bc in common]
+            rangex = [0,maxs[p1]]
+            rangey = [0,maxs[p2]]
+            pxy = histogram2d(x,y,bins=bins,range=[rangex,rangey])
+            #pxy, _, _ = numpy.histogram2d(x,y, density=True)
             pxy = pxy / pxy.sum()
             px = np.sum(pxy, axis=1)
             px = px / px.sum()
@@ -200,68 +168,17 @@ class GeneVectorDataset(Dataset):
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
             mi = np.sum(pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
-            mi_scores[p1][p2] = mi * constant
-            mi_scores[p2][p1] = mi * constant
+            mi_scores[p1][p2] = mi
+            mi_scores[p2][p1] = mi
         self.mi_scores = mi_scores
 
 
-    def generate_correlation(self, c=100.):
-        print("Generating matrix.")
-        vectorizer = feature_extraction.DictVectorizer(sparse=True)
-        corr_matrix = vectorizer.fit_transform(list(self.data.expression.values()))
-        corr_matrix[corr_matrix != 0] = 1
-
-        all_genes = vectorizer.feature_names_
-
-        gene_index = {w: idx for (idx, w) in enumerate(all_genes)}
-        index_gene = {idx: w for (idx, w) in enumerate(all_genes)}
-        self.data.gene2id = gene_index
-        self.data.id2gene = index_gene
-        self.data.expressed_genes = all_genes
-
-        corr_matrix = pandas.DataFrame(data=corr_matrix.todense(),columns=all_genes)
-        corr_df = corr_matrix
-
-        print("Decomposing")
-        coocc = numpy.array(corr_df.T.dot(corr_df))
-
-        corr_matrix = numpy.transpose(corr_matrix.to_numpy())
-        cov = numpy.corrcoef(corr_matrix)
-
-        self._i_idx = list()
-        self._j_idx = list()
-        self._xij = list()
-        import collections
-        self.correlation = collections.defaultdict(dict)
-
-        for gene, row in tqdm.tqdm(zip(all_genes, cov)):
-            for cgene, value in zip(all_genes, row):
-                if gene == cgene: continue
-                wi = self.data.gene2id[gene]
-                ci = self.data.gene2id[cgene]
-                self._i_idx.append(wi)
-                self._j_idx.append(ci)
-                self.correlation[gene][cgene] = value * c
-                if value > 0:
-                    self._xij.append(0. + value)
-                else:
-                    self._xij.append(0.)
-
-        if self.device == "cuda":
-            self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
-            self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()
-            self._xij = torch.cuda.FloatTensor(self._xij).cuda()
-        else:
-            self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
-            self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
-            self._xij = torch.FloatTensor(self._xij).to("cpu")
-        self.coocc = coocc
-        self.cov = cov
-
-    def create_inputs_outputs(self, max_pct=0.75, min_pct=0.0, c=100.):
-        print("Generating inputs and outputs.")
+    def create_inputs_outputs(self, c=100., bins=30):
+        print(bcolors.WARNING+"*****************"+bcolors.ENDC)
+        print(bcolors.HEADER+"Loading Dataset."+bcolors.ENDC)
+        print(bcolors.WARNING+"*****************\n"+bcolors.ENDC)
         if self.mi_scores == None:
-            self.generate_mi_scores(max_pct=max_pct, min_pct=min_pct, constant=c)
+            self.generate_mi_scores(bins=bins)
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
         index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
         self.data.gene2id = gene_index
@@ -271,7 +188,7 @@ class GeneVectorDataset(Dataset):
         self._j_idx = list()
         self._xij = list()
 
-        self.correlation = collections.defaultdict(dict)
+        print(bcolors.OKGREEN + "Loading Batches for Training." + bcolors.ENDC)
 
         for gene in tqdm.tqdm(self.data.genes):
             for cgene in self.data.genes:
@@ -280,7 +197,7 @@ class GeneVectorDataset(Dataset):
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                value = self.mi_scores[gene][cgene] * c
+                value = self.mi_scores[gene][cgene] * c**2
                 if value > 0:
                     self._xij.append(value)
                 else:
@@ -295,7 +212,8 @@ class GeneVectorDataset(Dataset):
             self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
             self._xij = torch.FloatTensor(self._xij).to("cpu")
 
-
+        print(bcolors.OKCYAN + "Ready to train." + bcolors.ENDC)
+    
     def get_batches(self, batch_size):
         if self.device == "cuda":
             rand_ids = torch.cuda.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))

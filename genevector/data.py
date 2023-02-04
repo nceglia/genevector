@@ -130,7 +130,6 @@ class GeneVectorDataset(Dataset):
         self.mi_scores = mi_scores
 
     def generate_mi_scores(self, bins = 40):
-        from fast_histogram import histogram2d
         print(bcolors.OKGREEN + "Getting gene pairs combinations." + bcolors.ENDC)
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
@@ -141,7 +140,6 @@ class GeneVectorDataset(Dataset):
         pairs = list(itertools.combinations(vgenes, 2))
         counts = collections.defaultdict(lambda : collections.defaultdict(int))
 
-        maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=1).T.todense())[0]))
         for c, p in self.data.expression.items():
             for g,v in p.items():
                 counts[g][c] += int(v)
@@ -149,16 +147,10 @@ class GeneVectorDataset(Dataset):
         for p1,p2 in tqdm.tqdm(pairs):
             common = bcs[p1].intersection(bcs[p2])
             if len(common) ==0: continue
-            maxp1 = maxs[p1]
-            maxp2 = maxs[p2]
-            if maxp1 < 2 or maxp2 < 2: continue
             c1 = counts[p1]
             c2 = counts[p2]
             x = [c1[bc] for bc in common]
             y = [c2[bc] for bc in common]
-            rangex = [0,maxs[p1]]
-            rangey = [0,maxs[p2]]
-            # pxy = histogram2d(x,y,bins=bins,range=[rangex,rangey])
             pxy, _, _ = numpy.histogram2d(x,y, density=True)
             pxy = pxy / pxy.sum()
             px = np.sum(pxy, axis=1)

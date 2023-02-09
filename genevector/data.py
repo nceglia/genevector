@@ -83,23 +83,19 @@ class Context(object):
         index_gene = numpy.array(genes)
         data = collections.defaultdict(list)
         self.expression = collections.defaultdict(dict)
-        print("Loading Expression.")
-        normalized_matrix = normalized_matrix.tocsc()
+        print(bcolors.OKGREEN + "Loading Expression." + bcolors.ENDC)
         normalized_matrix.eliminate_zeros()
-        print("Finding nonzero indices.")
         row_indices, column_indices = normalized_matrix.nonzero()
-        print("Loading nonzero entries.")
         nonzero_values = normalized_matrix.data
-        print("Indexing expression.")
+        print(bcolors.BOLD+"Indexing expression."+bcolors.ENDC)
         entries = list(zip(nonzero_values, row_indices, column_indices))
         for value, i, j in tqdm.tqdm(entries):
             barcode = cells[i]
             symbol = index_gene[j]
             self.expression[barcode][symbol] = value
             data[symbol].append(barcode)
-        print("Finished.")
+        print(bcolors.OKGREEN+"Finished."+bcolors.ENDC)
         return data
-
 
     def serialize(self):
         serialized = dict()
@@ -130,16 +126,20 @@ class GeneVectorDataset(Dataset):
         self.mi_scores = mi_scores
 
     def generate_mi_scores(self, bins = 40):
+        from fast_histogram import histogram2d
         print(bcolors.OKGREEN + "Getting gene pairs combinations." + bcolors.ENDC)
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
+        maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=1).T.todense())[0]))
         vgenes = []
         for gene, bc in self.data.data.items():
             bcs[gene] = set(bc)
-            vgenes.append(gene)
+            if maxs[gene.upper()] > 1:
+                vgenes.append(gene)
         pairs = list(itertools.combinations(vgenes, 2))
         counts = collections.defaultdict(lambda : collections.defaultdict(int))
-
+        self.num_pairs = len(pairs)
+        
         for c, p in self.data.expression.items():
             for g,v in p.items():
                 counts[g][c] += int(v)
@@ -147,10 +147,12 @@ class GeneVectorDataset(Dataset):
         for p1,p2 in tqdm.tqdm(pairs):
             common = bcs[p1].intersection(bcs[p2])
             if len(common) ==0: continue
+            
             c1 = counts[p1]
             c2 = counts[p2]
             x = [c1[bc] for bc in common]
             y = [c2[bc] for bc in common]
+            
             pxy, _, _ = numpy.histogram2d(x,y, density=True)
             pxy = pxy / pxy.sum()
             px = np.sum(pxy, axis=1)

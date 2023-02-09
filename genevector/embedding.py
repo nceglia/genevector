@@ -12,13 +12,25 @@ from sklearn.metrics import confusion_matrix
 from scipy.special import softmax
 from scipy.spatial import distance
 import numpy
-from scipy.sparse import csr_matrix, find
+from scipy.sparse import csr_matrix, csc_matrix, find
 import numpy as np
 import operator
 import collections
 import os   
 import pandas as pd
 import gc
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
 
 class GeneEmbedding(object):
 
@@ -53,7 +65,7 @@ class GeneEmbedding(object):
         for line in lines:
             vector = line.split()
             gene = vector.pop(0)
-            embedding[gene] = [float(x) for x in vector]
+            embedding[gene] = numpy.array([float(x) for x in vector])
         return embedding
 
     def get_adata(self, resolution=20):
@@ -286,44 +298,51 @@ class GeneEmbedding(object):
 
 class CellEmbedding(object):
 
-    def __init__(self, dataset, embed):
+    def __init__(self, dataset, embed, log_normalize=True):
+
         self.context = dataset.data
         self.embed = embed
         self.data = collections.defaultdict(list)
-        self.pcs = dict()
         self.matrix = []
-
+        self.expression = collections.defaultdict(dict)
         adata = self.context.adata.copy()
-        sc.pp.normalize_total(adata)
-        sc.pp.log1p(adata)
-        genes = adata.var.index.tolist()
-        normalized_matrix = csr_matrix(adata.X)
-        gene_index, index_gene = self.context.index_geneset(genes)
-        nonzero = find(normalized_matrix > 0)
-        print("Loading Expression.")
-        barcodes = adata.obs.index.tolist()
-        self.normalized_expression = collections.defaultdict(dict)
-        for cell, gene_i, val in tqdm.tqdm(list(zip(*nonzero))):
-            symbol = index_gene[gene_i]
-            self.normalized_expression[barcodes[cell]][symbol] = normalized_matrix[cell,gene_i]
 
+        if log_normalize:
+            sc.pp.normalize_total(adata)
+            sc.pp.log1p(adata)
+        
+        genes = adata.var.index.to_numpy()
+        barcodes = adata.obs.index.to_numpy()
+
+        matrix = csr_matrix(adata.X)
+        
+        self.normalized_expression = self.normalized_expression(matrix, 
+                                                                genes, 
+                                                                barcodes)
+
+        print(bcolors.OKGREEN + "Generating Cell Vectors." + bcolors.ENDC)
         for cell in tqdm.tqdm(adata.obs.index.tolist()):
-            vectors = []
-            weights = []
-            for gene, weight in self.normalized_expression[cell].items():
-                if gene in embed.embeddings:
-                    weights.append(weight)
-                    vectors.append(embed.embeddings[gene])
-            weights = numpy.array(weights)
-            if numpy.sum(weights) == 0:
-                continue
-            self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
+            vectors, weights = zip(*self.normalized_expression[cell])
             self.data[cell] = vectors
+            self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
         self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
+        print(bcolors.BOLD + "Finished." + bcolors.ENDC)
+
+    def normalized_expression(self, normalized_matrix, genes, cells):
+        normalized_expression = collections.defaultdict(list)
+        normalized_matrix.eliminate_zeros()
+        row_indices, column_indices = normalized_matrix.nonzero()
+        nonzero_values = normalized_matrix.data
+        entries = list(zip(nonzero_values, row_indices, column_indices))
+        for value, i, j in tqdm.tqdm(entries):
+            if value > 0 and genes[j].upper() in self.embed.embeddings:
+                normalized_expression[cells[i]].append((self.embed.embeddings[genes[j].upper()],value))
+        return normalized_expression
 
     def batch_correct(self, column, reference):
         if not column:
             raise ValueError("Must supply batch label to correct.")
+        
         column_labels = dict(zip(self.context.cells, self.context.metadata[column]))
         labels = []
         for key in self.data.keys():
@@ -412,65 +431,24 @@ class CellEmbedding(object):
             cell_similarities[label] = distances
         return cell_similarities
 
-    def plot_distance(self, vector, pcs=None, threshold=0.0, method="TSNE", title=None, show=True):
-        if type(pcs) != numpy.ndarray:
-            if method not in self.pcs:
-                if method == "TSNE":
-                    pca = TSNE(n_components=2)
-                    pcs = pca.fit_transform(self.matrix)
-                    pcs = numpy.transpose(pcs)
-                else:
-                    trans = umap.UMAP(random_state=42,metric='cosine').fit(self.matrix)
-                    x = trans.embedding_[:, 0]
-                    y = trans.embedding_[:, 1]
-                    pcs = [x,y]
-            else:
-                pcs = self.pcs[method]
-        distances = []
-        dataset_distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(self.dataset_vector).reshape(1, -1))[0])
-        for cell_vector in self.matrix:
-            distance = float(cosine_similarity(numpy.array(cell_vector).reshape(1, -1),numpy.array(vector).reshape(1, -1))[0])
-            d = distance-dataset_distance
-            if d < threshold:
-                d = -1.0
-            distances.append(d)
-        data = {"x":pcs[0],"y":pcs[1],"Distance": distances}
-        df = pandas.DataFrame.from_dict(data)
-        if show:
-            plt.figure(figsize = (8,8))
-            ax = plt.subplot(1,1, 1)
-            sns.scatterplot(data=df,x="x", y="y", hue='Distance', ax=ax,linewidth=0.00,s=7,alpha=0.7)
-            if title != None:
-                plt.title(title)
-        return distances
 
-    def phenotype_probability(self, adata, up_phenotype_markers, down_phenotype_markers, target_col="genevector"):
+    def phenotype_probability(self, adata, up_phenotype_markers, target_col="genevector"):
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         adata = adata[list(self.data.keys())]
         probs = dict()
-        def generate_weighted_vector(self, genes, markers, weights):
+        def generate_weighted_vector(self, genes, weights):
             vector = []
             for gene, vec in zip(self.genes, self.vector):
                 if gene in genes and gene in weights:
                     vector.append(weights[gene] * numpy.array(vec))
-                if gene not in genes and gene in markers and gene in weights:
-                    vector.append(list(weights[gene] * numpy.negative(numpy.array(vec))))
             return list(numpy.sum(vector, axis=0))
 
-        amarkers = []
-        for _, genes in up_phenotype_markers.items():
-            amarkers += genes
-        for _, genes in down_phenotype_markers.items():
-            amarkers += genes
-        amarkers = list(set(amarkers))
-        dataset_vector = numpy.average(self.matrix,axis=0)
         for pheno, markers in up_phenotype_markers.items():
             dists = []
             for x in tqdm.tqdm(adata.obs.index):
                 weights = self.normalized_expression[x]
                 try:
-                    vector = generate_weighted_vector(self.embed, markers, amarkers, weights)
-                    dvec = numpy.subtract(mapped_components[x], dataset_vector)
+                    vector = generate_weighted_vector(self.embed, markers, weights)
                     dist = 1. - distance.cosine(mapped_components[x], numpy.array(vector))
                     dists.append(dist)
                 except Exception as e:
@@ -509,8 +487,9 @@ class CellEmbedding(object):
         return adata
 
 
-
     def get_adata(self, min_dist=0.3, n_neighbors=50):
+        print(bcolors.OKGREEN + "Loading embedding in X_genevector." + bcolors.ENDC)
+        print(bcolors.OKGREEN + "Running Scanpy neighbors and umap." + bcolors.ENDC)
         adata = self.context.adata.copy()
         adata = adata[list(self.data.keys())]
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))

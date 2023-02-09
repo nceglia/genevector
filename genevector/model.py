@@ -52,7 +52,7 @@ class GeneVectorModel(nn.Module):
 
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=100000, c=100., bins= 40,device="cpu", correlation=False):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, c=1.,bins=40,device="cpu", correlation=False):
         self.dataset = dataset
         if correlation == False:
             self.dataset.create_inputs_outputs(c=c, bins=bins)
@@ -61,7 +61,12 @@ class GeneVector(object):
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension
-        self.batch_size = batch_size
+        if batch_size == None and self.dataset.num_pairs:
+            self.batch_size = self.dataset.num_pairs
+        elif batch_size != None:
+            self.batch_size = batch_size
+        else:
+            self.batch_size = 1e6
         self.use_cuda = torch.cuda.is_available()
         self.model = GeneVectorModel(self.emb_size, self.emb_dimension)
         self.device = device

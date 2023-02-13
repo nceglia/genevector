@@ -315,29 +315,28 @@ class CellEmbedding(object):
         barcodes = adata.obs.index.to_numpy()
 
         matrix = csr_matrix(adata.X)
-        
-        self.normalized_expression = self.normalized_expression(matrix, 
-                                                                genes, 
-                                                                barcodes)
+        self.normalized_vectors = collections.defaultdict(list)
+        self.normalized_marker_expression = collections.defaultdict(list)
+        self.normalized_expression(matrix, genes, barcodes)
 
         print(bcolors.OKGREEN + "Generating Cell Vectors." + bcolors.ENDC)
         for cell in tqdm.tqdm(adata.obs.index.tolist()):
-            vectors, weights = zip(*self.normalized_expression[cell])
+            vectors, weights = zip(*self.normalized_vectors[cell])
             self.data[cell] = vectors
             self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
         self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
         print(bcolors.BOLD + "Finished." + bcolors.ENDC)
 
     def normalized_expression(self, normalized_matrix, genes, cells):
-        normalized_expression = collections.defaultdict(list)
+        
         normalized_matrix.eliminate_zeros()
         row_indices, column_indices = normalized_matrix.nonzero()
         nonzero_values = normalized_matrix.data
         entries = list(zip(nonzero_values, row_indices, column_indices))
         for value, i, j in tqdm.tqdm(entries):
             if value > 0 and genes[j].upper() in self.embed.embeddings:
-                normalized_expression[cells[i]].append((self.embed.embeddings[genes[j].upper()],value))
-        return normalized_expression
+                self.normalized_vectors[cells[i]].append((self.embed.embeddings[genes[j].upper()],value))
+                self.normalized_marker_expression[cells[i]][genes[j]] = value
 
     def batch_correct(self, column, reference):
         if not column:
@@ -431,42 +430,64 @@ class CellEmbedding(object):
             cell_similarities[label] = distances
         return cell_similarities
 
-
-    def phenotype_probability(self, adata, up_phenotype_markers, target_col="genevector"):
+    def phenotype_probability(self, adata, phenotype_markers, mark_unknown=True, expression_weighted=True, target_col="genevector"):
+        for x in adata.obs.columns:
+            if "Pseudo-probability" in x:
+                del adata.obs[x]
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
-        adata = adata[list(self.data.keys())]
+        genes = adata.var.index.to_list()
+        cells = adata.obs.index.to_list()
+        matrix = csr_matrix(adata.X)
+        embedding = csr_matrix(cembed.matrix)
+        all_markers = []
+        for _, markers in phenotype_markers.items():
+            all_markers += markers
+        all_markers = list(set(all_markers))
+        normalized_expression = normalized_marker_expression(self, matrix, genes, cells, all_markers)
         probs = dict()
+
+        def normalized_marker_expression(self, normalized_matrix, genes, cells, markers):
+            normalized_expression = collections.defaultdict(dict)
+            normalized_matrix.eliminate_zeros()
+            row_indices, column_indices = normalized_matrix.nonzero()
+            nonzero_values = normalized_matrix.data
+            entries = list(zip(nonzero_values, row_indices, column_indices))
+            for value, i, j in tqdm.tqdm(entries):
+                if value > 0 and genes[j].upper() in self.embed.embeddings and genes[j] in markers:
+                    normalized_expression[cells[i]][genes[j]] = value
+            return normalized_expression
+
         def generate_weighted_vector(self, genes, weights):
             vector = []
             for gene, vec in zip(self.genes, self.vector):
                 if gene in genes and gene in weights:
                     vector.append(weights[gene] * numpy.array(vec))
-            return list(numpy.sum(vector, axis=0))
+            if numpy.sum(vector) == 0:
+                return None
+            else:
+                return list(numpy.mean(vector, axis=0))
+        matrix = matrix.todense()
 
-        for pheno, markers in up_phenotype_markers.items():
-            dists = []
+        for pheno, markers in phenotype_markers.items():
+            print(bcolors.OKBLUE+"Computing similarities for {}".format(pheno)+bcolors.ENDC)
+            print(bcolors.OKGREEN+"Markers: {}".format(", ".join(markers))+bcolors.ENDC)
+            odists = []
             for x in tqdm.tqdm(adata.obs.index):
-                weights = self.normalized_expression[x]
-                try:
-                    vector = generate_weighted_vector(self.embed, markers, weights)
+                weights = normalized_expression[x]
+                vector = generate_weighted_vector(self.embed, markers, weights)
+                if vector != None:
                     dist = 1. - distance.cosine(mapped_components[x], numpy.array(vector))
-                    dists.append(dist)
-                except Exception as e:
-                    dists.append(0.)
-            probs[pheno] = dists
+                    odists.append(dist)
+                else:
+                    odists.append(0.)
+            probs[pheno] = odists
         distribution = []
         celltypes = []
         for k, v in probs.items():
             distribution.append(v)
             celltypes.append(k)
-
         distribution = list(zip(*distribution))
-        classif = []
-        probabilities = []
         probabilities = softmax(numpy.array(distribution),axis=1)
-        for ct in probabilities:
-            assign = celltypes[numpy.argmax(ct)]
-            classif.append(assign)
         res = {"distances":distribution, "order":celltypes, "probabilities":probabilities}
         barcode_to_label = dict(zip(list(self.data.keys()), res["probabilities"]))
         ct = []
@@ -477,13 +498,21 @@ class CellEmbedding(object):
             for ph, pb in zip(res["order"],barcode_to_label[x]):
                 probs[ph].append(pb)
         adata.obs[target_col] = ct
-
         def load_predictions(adata,probs):
             for ph in probs.keys():
-                print(ph)
                 adata.obs[ph+" Pseudo-probability"] = probs[ph]
             return adata
         adata = load_predictions(adata,probs)
+        prob_cols = [x for x in adata.obs.columns if "Pseudo" in x]
+        cts = adata.obs[target_col].tolist()
+        probs = adata.obs[prob_cols].to_numpy()
+        adj_cts = []
+        for ct,p in zip(cts,probs):
+            if len(set(p)) == 1:
+                adj_cts.append("Unknown")
+            else:
+                adj_cts.append(ct)
+        adata.obs[target_col] = adj_cts
         return adata
 
 

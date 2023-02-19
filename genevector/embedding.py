@@ -246,9 +246,12 @@ class GeneEmbedding(object):
         dims = lines.pop(0)
         vecs = dict()
         for line in lines:
-            line = line.split()
-            gene = line.pop(0)
-            vecs[gene] = list(map(float,line))
+            try:
+                line = line.split()
+                gene = line.pop(0)
+                vecs[gene] = list(map(float,line))
+            except Exception as e:
+                continue
         return vecs, dims
 
     def get_similar_genes(self, vector):
@@ -316,14 +319,21 @@ class CellEmbedding(object):
 
         matrix = csr_matrix(adata.X)
         self.normalized_vectors = collections.defaultdict(list)
-        self.normalized_marker_expression = collections.defaultdict(list)
+        self.normalized_marker_expression = collections.defaultdict(dict)
         self.normalized_expression(matrix, genes, barcodes)
 
         print(bcolors.OKGREEN + "Generating Cell Vectors." + bcolors.ENDC)
+        cells_with_no_counts = 0
         for cell in tqdm.tqdm(adata.obs.index.tolist()):
-            vectors, weights = zip(*self.normalized_vectors[cell])
+            try:
+                vectors, weights = zip(*self.normalized_vectors[cell])
+            except Exception as e:
+                cells_with_no_counts += 1
+                continue
+            
             self.data[cell] = vectors
             self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
+        print("Found {} Cells with No Counts.".format(cells_with_no_counts))
         self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
         print(bcolors.BOLD + "Finished." + bcolors.ENDC)
 
@@ -438,7 +448,7 @@ class CellEmbedding(object):
         genes = adata.var.index.to_list()
         cells = adata.obs.index.to_list()
         matrix = csr_matrix(adata.X)
-        embedding = csr_matrix(cembed.matrix)
+        embedding = csr_matrix(self.matrix)
         all_markers = []
         for _, markers in phenotype_markers.items():
             all_markers += markers

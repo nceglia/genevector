@@ -126,4 +126,4 @@ prob_cols = [x for x in annotated_adata.obs.columns.tolist() if "Pseudo-probabil
 sc.pl.umap(annotated_adata,color=prob_cols+["genevector"],size=25)
 ```
 
-##### *All additional analyses described in the manuscript, including comparisons to LDVAE and CellAssign, can be found in Jupyter notebooks in the examples directory.*
+##### *All additional analyses described in the manuscript, including comparisons to LDVAE and CellAssign, can be found in Jupyter notebooks in the examples directory. Results were computed for v0.0.1.*

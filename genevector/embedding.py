@@ -320,7 +320,8 @@ class CellEmbedding(object):
         matrix = csr_matrix(adata.X)
         self.normalized_vectors = collections.defaultdict(list)
         self.normalized_marker_expression = collections.defaultdict(dict)
-        self.normalized_expression(matrix, genes, barcodes)
+        self.normalized_expression = self.normalized_expression(matrix, genes, barcodes)
+        self.normalized_expression_values = None
 
         print(bcolors.OKGREEN + "Generating Cell Vectors." + bcolors.ENDC)
         cells_with_no_counts = 0
@@ -338,7 +339,6 @@ class CellEmbedding(object):
         print(bcolors.BOLD + "Finished." + bcolors.ENDC)
 
     def normalized_expression(self, normalized_matrix, genes, cells):
-        
         normalized_matrix.eliminate_zeros()
         row_indices, column_indices = normalized_matrix.nonzero()
         nonzero_values = normalized_matrix.data
@@ -440,7 +440,29 @@ class CellEmbedding(object):
             cell_similarities[label] = distances
         return cell_similarities
 
+    def normalized_marker_expression(self, normalized_matrix, genes, cells, markers):
+        normalized_expression = collections.defaultdict(dict)
+        normalized_matrix.eliminate_zeros()
+        row_indices, column_indices = normalized_matrix.nonzero()
+        nonzero_values = normalized_matrix.data
+        entries = list(zip(nonzero_values, row_indices, column_indices))
+        for value, i, j in tqdm.tqdm(entries):
+            if value > 0 and genes[j].upper() in self.embed.embeddings and genes[j] in markers:
+                normalized_expression[cells[i]][genes[j]] = value
+        return normalized_expression
+
     def phenotype_probability(self, adata, phenotype_markers, mark_unknown=True, expression_weighted=True, target_col="genevector"):
+        def normalized_marker_expression_sub(self, normalized_matrix, genes, cells, markers):
+            normalized_expression = collections.defaultdict(dict)
+            normalized_matrix.eliminate_zeros()
+            row_indices, column_indices = normalized_matrix.nonzero()
+            nonzero_values = normalized_matrix.data
+            entries = list(zip(nonzero_values, row_indices, column_indices))
+            for value, i, j in tqdm.tqdm(entries):
+                if value > 0 and genes[j].upper() in self.embed.embeddings and genes[j] in markers:
+                    normalized_expression[cells[i]][genes[j]] = value
+            return normalized_expression
+
         for x in adata.obs.columns:
             if "Pseudo-probability" in x:
                 del adata.obs[x]
@@ -453,23 +475,12 @@ class CellEmbedding(object):
         for _, markers in phenotype_markers.items():
             all_markers += markers
         all_markers = list(set(all_markers))
-        normalized_expression = normalized_marker_expression(self, matrix, genes, cells, all_markers)
+        normalized_expression = normalized_marker_expression_sub(self, matrix, genes, cells, all_markers)
         probs = dict()
 
-        def normalized_marker_expression(self, normalized_matrix, genes, cells, markers):
-            normalized_expression = collections.defaultdict(dict)
-            normalized_matrix.eliminate_zeros()
-            row_indices, column_indices = normalized_matrix.nonzero()
-            nonzero_values = normalized_matrix.data
-            entries = list(zip(nonzero_values, row_indices, column_indices))
-            for value, i, j in tqdm.tqdm(entries):
-                if value > 0 and genes[j].upper() in self.embed.embeddings and genes[j] in markers:
-                    normalized_expression[cells[i]][genes[j]] = value
-            return normalized_expression
-
-        def generate_weighted_vector(self, genes, weights):
+        def generate_weighted_vector(embed, genes, weights):
             vector = []
-            for gene, vec in zip(self.genes, self.vector):
+            for gene, vec in zip(embed.genes, embed.vector):
                 if gene in genes and gene in weights:
                     vector.append(weights[gene] * numpy.array(vec))
             if numpy.sum(vector) == 0:
@@ -479,6 +490,7 @@ class CellEmbedding(object):
         matrix = matrix.todense()
 
         for pheno, markers in phenotype_markers.items():
+            dists = []
             print(bcolors.OKBLUE+"Computing similarities for {}".format(pheno)+bcolors.ENDC)
             print(bcolors.OKGREEN+"Markers: {}".format(", ".join(markers))+bcolors.ENDC)
             odists = []

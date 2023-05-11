@@ -68,7 +68,7 @@ gembed = GeneEmbedding("genes.vec", dataset, vector="average")
 ```
 
 #### 1. Computing gene similarities
-A pandas dataframe can be generated using ```compute_similarities``` that includes the most similar genes and their cosine similarities for a given gene query. A barplot figure with a specified number of the most similar genes can be generated using ```plots_similarities```.
+A pandas dataframe can be generated using ```compute_similarities``` that includes the most similar genes and their cosine similarities for a given gene query. A barplot figure with a specified number of the most similar genes can be generated using ```plot_similarities```.
 
 ```
 df = gembed.compute_similarities("CD8A")

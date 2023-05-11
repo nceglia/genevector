@@ -10,4 +10,4 @@ tqdm==4.64.1
 seaborn==0.12.1
 matplotlib==3.6.2
 scikit-misc==0.1.4
-torch==">=1.8.0"
+torch>=1.8.0

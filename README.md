@@ -35,7 +35,7 @@ GeneVector makes use of Scanpy anndata objects and requires that the raw count d
 
 ```
 from genevector.data import GeneVectorDataset
-from genevector.model import GeneVectorModel
+from genevector.model import GeneVectorModel, GeneVector
 from genevector.embedding import GeneEmbedding, CellEmbedding
 
 import scanpy as sc

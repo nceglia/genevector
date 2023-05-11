@@ -50,7 +50,6 @@ After loading the expression, creating a GeneVector object will compute the mutu
 cmps = GeneVector(dataset,
                   output_file="genes.vec",
                   emb_dimension=100,
-                  threshold=1e-6,
                   device="cuda")
 cmps.train(1000, threshold=1e-6) # run for 1000 iterations or loss delta below 1e-6.
 ```

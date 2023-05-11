@@ -35,7 +35,7 @@ GeneVector makes use of Scanpy anndata objects and requires that the raw count d
 
 ```
 from genevector.data import GeneVectorDataset
-from genevector.model import GeneVectorTrainer
+from genevector.model import GeneVectorModel, GeneVector
 from genevector.embedding import GeneEmbedding, CellEmbedding
 
 import scanpy as sc
@@ -50,7 +50,6 @@ After loading the expression, creating a GeneVector object will compute the mutu
 cmps = GeneVector(dataset,
                   output_file="genes.vec",
                   emb_dimension=100,
-                  threshold=1e-6,
                   device="cuda")
 cmps.train(1000, threshold=1e-6) # run for 1000 iterations or loss delta below 1e-6.
 ```
@@ -69,7 +68,7 @@ gembed = GeneEmbedding("genes.vec", dataset, vector="average")
 ```
 
 #### 1. Computing gene similarities
-A pandas dataframe can be generated using ```compute_similarities``` that includes the most similar genes and their cosine similarities for a given gene query. A barplot figure with a specified number of the most similar genes can be generated using ```plots_similarities```.
+A pandas dataframe can be generated using ```compute_similarities``` that includes the most similar genes and their cosine similarities for a given gene query. A barplot figure with a specified number of the most similar genes can be generated using ```plot_similarities```.
 
 ```
 df = gembed.compute_similarities("CD8A")

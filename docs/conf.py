@@ -21,7 +21,7 @@ language = None
 
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
-html_theme = 'alabaster'
+html_theme = 'sphinx_rtd_theme'
 
 html_static_path = ['_static']
 

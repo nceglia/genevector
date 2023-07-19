@@ -22,4 +22,4 @@ API Reference
 =============
 
 .. automodule:: genevector.embedding
-    :members: CellEmbedding, GeneEmbedding
+    :members: GeneEmbedding

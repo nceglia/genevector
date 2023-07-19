@@ -18,8 +18,8 @@ Indices and tables
 * :ref:`modindex`
 * :ref:`search`
 
-.. API Reference
-.. =============
+API Reference
+=============
 
-.. .. automodule:: embedding
-..     :members:
+.. automodule:: embedding
+    :members:

@@ -1,5 +1,5 @@
 ![alt text](https://github.com/nceglia/genevector/blob/main/logo.png?raw=true)
-![alt text](framework.png?raw=true)
+![alt text](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true)
 
 ## Installation
 
@@ -20,13 +20,6 @@ python3 setup.py install
 2. TICA workflow: Cell type assignment.
 3. SPECTRUM workflow: Vector arithmetic for site specific metagenes.
 4. FITNESS workflow: Identifying increasing metagenes in time series.
-
-Example data can be downloaded within Jupyter notebooks from Google Drive using *gdown*.
-```
-pip install gdown
-```
-The data is available for download directly
-[here](https://drive.google.com/drive/folders/1ZRsdnlu9MSaRm4t_w_glD5XTqrY6CnIY?usp=sharing).
 
 ## GeneVector Workflow
 

@@ -17,7 +17,7 @@ source_suffix = '.rst'
 
 master_doc = 'index'
 
-html_logo = "framework.jpg"
+html_logo = "logo.png"
 
 language = None
 

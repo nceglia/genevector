@@ -515,7 +515,7 @@ class CellEmbedding(object):
                 normalized_expression[cells[i]][genes[j]] = value
         return normalized_expression
 
-    def phenotype_probability(self, adata, phenotype_markers, return_distances=True, expression_weighted=True, target_col="genevector"):
+    def phenotype_probability(self, adata, phenotype_markers, return_distances=False, expression_weighted=False, target_col="genevector"):
         def normalized_marker_expression_sub(self, normalized_matrix, genes, cells, markers):
             normalized_expression = collections.defaultdict(dict)
             normalized_matrix.eliminate_zeros()

@@ -17,6 +17,8 @@ source_suffix = '.rst'
 
 master_doc = 'index'
 
+html_logo = "framework.jpg"
+
 language = None
 
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']

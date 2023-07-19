@@ -21,5 +21,9 @@ Welcome to GeneVector's documentation!
 API Reference
 =============
 
-.. automodule:: embedding
-    :members: GeneEmbedding
+
+.. automodule:: genevector
+   :imported-members:
+   :members:
+   :undoc-members:
+   :show-inheritance:

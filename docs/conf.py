@@ -1,7 +1,6 @@
 import os
 import sys
 sys.path.insert(0, os.path.abspath('.'))
-sys.path.insert(0, os.path.abspath('../genevector/'))
 
 project = 'GeneVector'
 copyright = '2023, Memorial Sloan Kettering Cancer Center'

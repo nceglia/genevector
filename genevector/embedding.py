@@ -32,7 +32,39 @@ class bcolors:
 
 class GeneEmbedding(object):
 
-    def __init__(self, embedding_file, dataset, vector="1"):
+    """
+    A class used to represent the learned gene embedding.
+
+    This class provides an embedding (a representation in a lower-dimensional space) for genes,
+    which can be used for tasks such as similarity computation, visualization, etc.
+
+    ...
+
+    Methods
+    -------
+    __init__(self, embedding_file, dataset, vector):
+        Initializes the GeneEmbedding object with an embedding file learned from GeneVector model and a GeneVectorDataset object generated from an AnnData object.
+    
+    get_adata():
+        Returns the AnnData object holding the learned gene embedding.
+
+    plot_similarities():
+        Plots a similarity matrix of the genes based on their embeddings.
+    """
+
+    def __init__(self, embedding_file, dataset, vector="average"):
+        """
+        Initialize the GeneEmbedding object.
+
+        Parameters
+        ----------
+        embedding_file : str
+            Specifies the path to a set of .vec files generated for model training.
+        dataset : GeneVectorDataset
+            The GeneVectorDataset object that was constructed from the original AnnData object.
+        vector : str
+            Specifies if using the first set of weights ("1"), the second set of weights ("2"), or the average ("average"). This should be set to "average".
+        """
         if vector not in ("1","2","average"):
             raise ValueError("Select the weight vector from: ('1','2','average')")
         if vector == "average":
@@ -66,7 +98,23 @@ class GeneEmbedding(object):
             embedding[gene] = numpy.array([float(x) for x in vector])
         return embedding
 
-    def get_adata(self, resolution=20):
+    def get_adata(self, resolution=20.):
+        """
+        Get the AnnData object holding the learned gene embedding.
+
+        This method returns the AnnData object that contains the gene embedding with leiden clusters for metagenes, the neighbors graph, and the UMAP embedding.
+       
+        Parameters
+        ----------
+        resolution : float
+            The resolution to pass to the sc.tl.leiden function.
+        
+        Returns
+        -------
+        AnnData
+            An AnnData object with metagenes stored in 'leiden' for the provided resolution, the neighbors graph, and UMAP embedding.
+        """
+
         mat = numpy.array(self.vector)
         numpy.savetxt(".tmp.txt",mat)
         gdata = sc.read_text(".tmp.txt")
@@ -78,12 +126,30 @@ class GeneEmbedding(object):
         return gdata
 
     def plot_similarities(self, gene, n_genes=10, save=None):
+        """
+        Plot a horizontal bar plot of cosine similarity of the most similar vectors to 'gene' argument.
+
+        Parameters
+        ----------
+        gene : str
+            The gene symbol of the gene of interest.
+        n_genes : int
+            The number of most similar genes to plot.
+        save : str
+            The path to save the figure (optional).
+
+        Returns
+        -------
+        matplotlib.figure.ax
+            A matplotlib axes object representing the plot.
+        """
         df = self.compute_similarities(gene).head(n_genes)
         _,ax = plt.subplots(1,1,figsize=(3,6))
         sns.barplot(data=df,y="Gene",x="Similarity",palette="magma_r",ax=ax)
         ax.set_title("{} Similarity".format(gene))
         if save != None:
             plt.savefig(save)
+        return ax
 
     def plot_metagene(self, gdata, mg=None, title="Gene Embedding"):
         highlight = []

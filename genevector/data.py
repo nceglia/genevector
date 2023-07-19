@@ -1,15 +1,12 @@
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-import scanpy as sc
 import numpy
 from scipy import sparse
 import itertools
 import pickle
 import os
-import pandas
-from sklearn import feature_extraction
-import pandas
+from multiprocessing import Pool
 import tqdm
 import collections
 
@@ -114,10 +111,10 @@ class Context(object):
         pickle.dump(serialized, open(filename,"wb"))
 
 
-
 class GeneVectorDataset(Dataset):
 
-    def __init__(self, adata, device="cpu", mi_scores=None):
+    def __init__(self, adata, device="cpu", mi_scores=None, processes=1):
+        adata.var.index = [str(x).upper() for x in adata.var.index.tolist()]
         adata.X = sparse.csr_matrix(adata.X)
         self.data = Context.build(adata)
         self._word2id = self.data.gene2id
@@ -125,9 +122,49 @@ class GeneVectorDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
         self.mi_scores = mi_scores
+        self.processes = processes
 
-    def generate_mi_scores(self, bins = 40):
-        from fast_histogram import histogram2d
+    # def generate_mi_scores(self):
+    #     mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
+    #     bcs = dict()
+    #     maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=1).T.todense())[0]))
+    #     vgenes = []
+    #     for gene, bc in self.data.data.items():
+    #         bcs[gene] = set(bc)
+    #         if maxs[gene.upper()] > 1:
+    #             vgenes.append(gene.upper())
+
+    #     exp = dict()
+    #     bins = dict()
+    #     indices = dict()
+    #     adata = self.data.adata
+    #     print(bcolors.OKGREEN + "Computing Expression Bins." + bcolors.ENDC)
+    #     for gene in tqdm.tqdm(vgenes):
+    #         exp[gene] = numpy.array(adata.X[:,adata.var.index.tolist().index(gene)].todense().T.tolist()[0])
+    #         bins[gene] = self.rna_expr_percentile_hist(exp[gene])
+    #         indices[gene] = self.rna_expr_to_bin_inds(exp[gene],bins[gene])
+        
+    #     pairs = list(itertools.combinations(vgenes, 2))
+    #     self.num_pairs = len(pairs)
+
+    #     joints = []
+    #     for p1,p2 in tqdm.tqdm(pairs):
+    #         nbins1 = bins[p1].shape[0]+1
+    #         nbins2 = bins[p2].shape[0]+1
+    #         joints.append((indices[p1],indices[p2],nbins1,nbins2))
+
+    #     print(bcolors.OKGREEN + "Computing Joint Distributions and Mutual Information." + bcolors.ENDC)
+    #     import time
+    #     start_time = time.time()
+    #     with Pool(processes=self.processes) as pool:
+    #         result = pool.starmap(self.mutual_info, joints)
+    #         for ps, mi in zip(pairs, result):
+    #             mi_scores[ps[0]][ps[1]] = mi
+    #             mi_scores[ps[1]][ps[0]] = mi
+    #     print("Finished in %s seconds." % (time.time() - start_time))
+    #     self.mi_scores = mi_scores
+
+    def generate_mi_scores(self):
         print(bcolors.OKGREEN + "Getting gene pairs combinations." + bcolors.ENDC)
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
@@ -168,12 +205,72 @@ class GeneVectorDataset(Dataset):
         self.mi_scores = mi_scores
 
 
-    def create_inputs_outputs(self, c=100., bins=30):
+    @staticmethod
+    def mutual_info():
+        pxy, _, _ = numpy.histogram2d(x,y, density=True)
+        pxy = pxy / pxy.sum()
+        px = np.sum(pxy, axis=1)
+        px = px / px.sum()
+        py = np.sum(pxy, axis=0)
+        py = py / py.sum()
+        px_py = px[:, None] * py[None, :]
+        nzs = pxy > 0
+        mi = np.sum(pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
+        return mi
+
+    @staticmethod
+    def mutual_info(rna_ind_exprA, rna_ind_exprB, nbinsA, nbinsB):
+        pxy = numpy.zeros((nbinsA,nbinsB))
+        indxs = list(zip(rna_ind_exprA, rna_ind_exprB))
+        for indA, indB in set(indxs):
+            pxy[indA, indB] = indxs.count((indA,indB))
+        pxy = pxy[1:,1:]
+        pxy = pxy / pxy.sum()
+        px = np.sum(pxy, axis=1)
+        px = px / px.sum()
+        py = np.sum(pxy, axis=0)
+        py = py / py.sum()
+        px_py = px[:, None] * py[None, :]
+        nzs = pxy > 0
+        pxy = pxy[nzs]
+        px_py = px_py[nzs]
+        mi = np.sum(pxy * np.log2((pxy / px_py)))
+        return mi
+
+    @staticmethod
+    def rna_expr_percentile_hist(rna_expr, min_frac_coverage = .05):
+        rna_expr = np.array(sorted(rna_expr))
+        non_zero_ind_start = rna_expr.searchsorted(0, 'right')
+        n_tot = len(rna_expr)
+        min_coverage = int(np.ceil((n_tot - non_zero_ind_start)*min_frac_coverage))
+        bins_out = [0]
+        i = min_coverage
+        while i < n_tot - min_coverage + 1:
+            if rna_expr[i] > bins_out[-1]:
+                bins_out.append(rna_expr[i])
+                i += min_coverage
+            else:
+                i = rna_expr.searchsorted(rna_expr[i], 'right')
+        return np.array(bins_out)
+
+    @staticmethod
+    def rna_expr_to_bin_inds(rna_expr, bins):
+        return [0 if x == 0 else bins.searchsorted(x) for x in rna_expr]
+
+    @staticmethod
+    def rna_ind_vecs_to_joint_dist(rna_ind_exprA, rna_ind_exprB, nbinsA, nbinsB):
+        joint_dist = numpy.zeros((nbinsA,nbinsB))
+        for indA, indB in zip(rna_ind_exprA,rna_ind_exprB):
+            joint_dist[indA, indB] += 1
+        return joint_dist
+
+    def create_inputs_outputs(self, c=1.):
         print(bcolors.WARNING+"*****************"+bcolors.ENDC)
         print(bcolors.HEADER+"Loading Dataset."+bcolors.ENDC)
         print(bcolors.WARNING+"*****************\n"+bcolors.ENDC)
         if self.mi_scores == None:
-            self.generate_mi_scores(bins=bins)
+            self.generate_mi_scores()
+
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
         index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
         self.data.gene2id = gene_index

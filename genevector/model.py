@@ -31,7 +31,7 @@ class GeneVectorModel(nn.Module):
         self.wi = nn.Embedding(num_embeddings, embedding_dim)
         self.wj = nn.Embedding(num_embeddings, embedding_dim)
         self.wi.weight.data.uniform_(-1, 1.)
-        self.wj.weight.data.uniform_(-1., 1.)
+        self.wj.weight.data.uniform_(-1.,1.)
 
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)
@@ -50,12 +50,11 @@ class GeneVectorModel(nn.Module):
                 e = ' '.join(map(lambda x: str(x), embedding[wid]))
                 f.write('%s %s\n' % (w, e))
 
-
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, c=1.,bins=40,device="cpu", correlation=False):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, c=1., device="cpu", correlation=False):
         self.dataset = dataset
         if correlation == False:
-            self.dataset.create_inputs_outputs(c=c, bins=bins)
+            self.dataset.create_inputs_outputs(c=c)
         else:
             self.dataset.generate_correlation(c=c)
         self.output_file_name = output_file
@@ -80,9 +79,9 @@ class GeneVector(object):
         self.loss_values = list()
         self.mean_loss_values = []
 
-    def train(self, epochs, threshold=1e-5):
+    def train(self, epochs, threshold=None, update_interval=20):
         last_loss = 0.
-        for epoch in range(1, epochs+1):
+        for _ in range(1, epochs+1):
             batch_i = 0
             for x_ij, i_idx, j_idx in self.dataset.get_batches(self.batch_size):
                 batch_i += 1
@@ -92,17 +91,14 @@ class GeneVector(object):
                 loss.backward()
                 self.optimizer.step()
                 self.loss_values.append(loss.item())
-            self.mean_loss_values.append(numpy.mean(self.loss_values[-20:]))
-            curr_loss = numpy.mean(self.loss_values[-20:])
-            delta = abs(curr_loss - last_loss)
-            if self.epoch % 20 == 0:
+            self.mean_loss_values.append(numpy.mean(self.loss_values[-10:]))
+            curr_loss = numpy.mean(self.loss_values[-10:])
+            if self.epoch % int(update_interval) == 0:
                 print(bcolors.OKGREEN + "**** Epoch" + bcolors.ENDC,
                     self.epoch, 
-                    bcolors.HEADER+"\tDelta: "+ bcolors.ENDC,
-                    round(delta,5),
-                    bcolors.OKGREEN+"\tLoss:"+bcolors.ENDC,
+                    bcolors.HEADER+"\tLoss:"+bcolors.ENDC,
                     round(np.mean(self.loss_values[-30:]),5))
-            if abs(curr_loss - last_loss) < threshold:
+            if type(threshold) == float and abs(curr_loss - last_loss) < threshold:
                 print(bcolors.OKCYAN + "Training complete!" + bcolors.ENDC)
                 return
             last_loss = curr_loss
@@ -118,10 +114,12 @@ class GeneVector(object):
         self.gnn.load_state_dict(torch.load(filepath))
         self.gnn.eval()
 
-    def plot(self, fname=None):
+    def plot(self, fname=None, log=False):
         fig, ax = plt.subplots(1,1,figsize=(12,5),facecolor='#FFFFFF')
         ax.plot(self.mean_loss_values, color="purple")
         ax.set_ylabel('Loss')
         ax.set_xlabel('Epoch')
+        if log:
+            ax.set_xscale('log')
         if fname != None:
             fig.savefig(fname)

@@ -10,9 +10,14 @@ Welcome to GeneVector's documentation!
    :maxdepth: 2
    :caption: Contents:
 
-Indices and tables
-==================
+Overview
+=============
+
+GeneVector is a Python library for generating gene embeddings from mutual information between genes in single cell RNA-seq datasets. The library is built on top of PyTorch and Scanpy, making use of the AnnData format for representing single cell RNA-seq datasets. After generating gene-based embeddings by training a model, these embeddings can be loaded into GeneEmbedding and CellEmbedding objects to perform analyses include the identification of transcriptional programs (metagenes), cell type annotation, and batch correction. Visualization methods are included that make use of Scanpy's core plotting features.
+
+
+API Reference
+=============
 
 * :ref:`genindex`
 * :ref:`modindex`
-* :ref:`search`

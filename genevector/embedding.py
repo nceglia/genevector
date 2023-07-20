@@ -33,37 +33,18 @@ class bcolors:
 class GeneEmbedding(object):
 
     """
-    A class used to represent the learned gene embedding.
+    This class provides an interface to the gene embedding, which can be used for tasks such as similarity computation, visualization, etc.
 
-    This class provides an embedding (a representation in a lower-dimensional space) for genes,
-    which can be used for tasks such as similarity computation, visualization, etc.
-
-    ...
-
-    Methods
-    -------
-    __init__(self, embedding_file, dataset, vector):
-        Initializes the GeneEmbedding object with an embedding file learned from GeneVector model and a GeneVectorDataset object generated from an AnnData object.
-    
-    get_adata():
-        Returns the AnnData object holding the learned gene embedding.
-
-    plot_similarities():
-        Plots a similarity matrix of the genes based on their embeddings.
+    :param embedding_file: Specifies the path to a set of .vec files generated for model training.
+    :type embedding_file: str
+    :param dataset: The GeneVectorDataset object that was constructed from the original AnnData object.
+    :type dataset: :class:'genevector.dataset.GeneVectorDataset'
+    :param vector: Specifies if using the first set of weights ("1"), the second set of weights ("2"), or the average ("average").
+    :type vector: str
     """
 
     def __init__(self, embedding_file, dataset, vector="average"):
-        """
-        Initialize the GeneEmbedding object.
-
-        Parameters
-        ----------
-        embedding_file : str
-            Specifies the path to a set of .vec files generated for model training.
-        dataset : GeneVectorDataset
-            The GeneVectorDataset object that was constructed from the original AnnData object.
-        vector : str
-            Specifies if using the first set of weights ("1"), the second set of weights ("2"), or the average ("average"). This should be set to "average".
+        """Constructor method
         """
         if vector not in ("1","2","average"):
             raise ValueError("Select the weight vector from: ('1','2','average')")
@@ -100,19 +81,12 @@ class GeneEmbedding(object):
 
     def get_adata(self, resolution=20.):
         """
-        Get the AnnData object holding the learned gene embedding.
-
         This method returns the AnnData object that contains the gene embedding with leiden clusters for metagenes, the neighbors graph, and the UMAP embedding.
-       
-        Parameters
-        ----------
-        resolution : float
-            The resolution to pass to the sc.tl.leiden function.
-        
-        Returns
-        -------
-        AnnData
-            An AnnData object with metagenes stored in 'leiden' for the provided resolution, the neighbors graph, and UMAP embedding.
+
+        :param resolution: The resolution to pass to the sc.tl.leiden function.
+        :type resolution: float
+        :return: An AnnData object with metagenes stored in 'leiden' for the provided resolution, the neighbors graph, and UMAP embedding.
+        :rtype: AnnData
         """
 
         mat = numpy.array(self.vector)
@@ -129,19 +103,12 @@ class GeneEmbedding(object):
         """
         Plot a horizontal bar plot of cosine similarity of the most similar vectors to 'gene' argument.
 
-        Parameters
-        ----------
-        gene : str
-            The gene symbol of the gene of interest.
-        n_genes : int
-            The number of most similar genes to plot.
-        save : str
-            The path to save the figure (optional).
-
-        Returns
-        -------
-        matplotlib.figure.ax
-            A matplotlib axes object representing the plot.
+        :param gene: The gene symbol of the gene of interest.
+        :type gene: str
+        :param save: The path to save the figure (optional).
+        :type gene: str, optional
+        :return: A matplotlib axes object representing the plot.
+        :rtype:  matplotlib.figure.axes
         """
         df = self.compute_similarities(gene).head(n_genes)
         _,ax = plt.subplots(1,1,figsize=(3,6))

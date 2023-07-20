@@ -21,10 +21,9 @@ release = '0.2.2'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = ['sphinx.ext.autodoc',]
-
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
+add_module_names = False
 
 
 # -- Options for HTML output -------------------------------------------------

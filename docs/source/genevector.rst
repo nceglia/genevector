@@ -1,37 +1,29 @@
 genevector package
 ==================
 
-Submodules
-----------
-
-genevector.data module
+genevector.data
 ----------------------
 
 .. automodule:: genevector.data
    :members:
    :undoc-members:
    :show-inheritance:
+   :exclude-members: bcolors, Context
 
-genevector.embedding module
+genevector.embedding
 ---------------------------
 
 .. automodule:: genevector.embedding
    :members:
-   :undoc-members:
    :show-inheritance:
+   :exclude-members: bcolors
 
-genevector.model module
+genevector.model
 -----------------------
 
 .. automodule:: genevector.model
    :members:
    :undoc-members:
    :show-inheritance:
+   :exclude-members: bcolors
 
-Module contents
----------------
-
-.. automodule:: genevector
-   :members:
-   :undoc-members:
-   :show-inheritance:

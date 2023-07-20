@@ -119,6 +119,16 @@ class GeneEmbedding(object):
         return ax
 
     def plot_metagene(self, gdata, mg=None, title="Gene Embedding"):
+        """
+        Plot a UMAP with the genes from a given metagene highlighted and annotated.
+
+        :param gdata: The AnnData object holding the gene embedding (from embedding.get_adata).
+        :type gene: AnnData
+        :param mg: The metagene identifier (leiden cluster number) (optional).
+        :type mg: str, optional
+        :param title: The title of the plot. (optional).
+        :type title: str, optional
+        """
         highlight = []
         labels = []
         clusters = collections.defaultdict(list)
@@ -143,6 +153,20 @@ class GeneEmbedding(object):
         plt.tight_layout()
 
     def plot_metagenes_scores(self, adata, metagenes, column, plot=None):
+        """
+        Plot a Seaborn clustermap with the gene module scores for a list of metagenes over a covariate (column). Requires running score_metagenes previously.
+
+        :param adata: The AnnData object holding the cell embedding (from embedding.CellEmbedding.get_adata).
+        :type adata: AnnData
+        :param metagenes: Dict of metagenes identifiers to plot in clustermap.
+        :type metagenes: dict
+        :param column: Covariate in obs dataframe of AnnData.
+        :type column: str
+        :param column: Covariate in obs dataframe of AnnData.
+        :type column: str
+        :param plot: Filename for saving a figure.
+        :type plot: str
+        """
         plt.figure(figsize = (5, 13))
         matrix = []
         meta_genes = []
@@ -172,6 +196,14 @@ class GeneEmbedding(object):
             plt.savefig(plot)
 
     def score_metagenes(self,adata ,metagenes):
+        """
+        Score a list of metagenes (get_metagenes) over all cells. 
+
+        :param adata: The AnnData object holding the cell embedding (from embedding.CellEmbedding.get_adata).
+        :type adata: AnnData
+        :param metagenes: Dict of metagenes identifiers to plot in clustermap.
+        :type metagenes: dict
+        """
         for p, genes in metagenes.items():
             try:
                 sc.tl.score_genes(adata,score_name=str(p)+"_SCORE",gene_list=genes)
@@ -185,6 +217,14 @@ class GeneEmbedding(object):
             
 
     def get_metagenes(self, gdata):
+        """
+        Score a list of metagenes (get_metagenes) over all cells. 
+
+        :param gdata: The AnnData object holding the gene embedding (from embedding.GeneEmbedding.get_adata).
+        :type gdata: AnnData
+        :return: A dictionary of metagenes (identifier, gene list).
+        :rtype:  dict
+        """
         metagenes = collections.defaultdict(list)
         for x,y in zip(gdata.obs["leiden"],gdata.obs.index):
             metagenes[x].append(y)

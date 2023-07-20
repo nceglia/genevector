@@ -1,6 +1,6 @@
 scipy==1.9.0
 leidenalg==0.8.10
-numpy==1.22.4
+numpy==1.21.0
 sklearn==0.0
 pandas==1.5.1
 scanpy==1.9.1
@@ -9,3 +9,4 @@ tqdm==4.64.1
 seaborn==0.12.1
 matplotlib==3.6.2
 scikit-misc==0.1.4
+torch==1.13.1

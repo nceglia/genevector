@@ -123,7 +123,7 @@ class GeneEmbedding(object):
         Plot a UMAP with the genes from a given metagene highlighted and annotated.
 
         :param gdata: The AnnData object holding the gene embedding (from embedding.get_adata).
-        :type gene: AnnData
+        :type gdata: AnnData
         :param mg: The metagene identifier (leiden cluster number) (optional).
         :type mg: str, optional
         :param title: The title of the plot. (optional).
@@ -230,14 +230,19 @@ class GeneEmbedding(object):
             metagenes[x].append(y)
         return metagenes
 
-    def compute_similarities(self, gene, subset=None, feature_type=None):
+    def compute_similarities(self, gene, subset=None):
+        """
+        Compute the cosine similarities between a target gene and all other vectors in the embedding.
+
+        :param gene: Target gene to compute cosine similarities.
+        :type gene: str
+        :param subset: Only compute against a subset of gene vectors. (optional).
+        :type subset: list, optional
+        :return: A pandas dataframe holding a gene symbol column ("Gene") and a cosine similarity column ("Similarity").
+        :rtype:  pandas.DataFrmae
+        """
         if gene not in self.embeddings:
             return None
-        if feature_type:
-            subset = []
-            for gene in list(self.embeddings.keys()):
-                if feature_type == self.context.feature_types[gene]:
-                    subset.append(gene)
         embedding = self.embeddings[gene]
         distances = dict()
         if subset:
@@ -283,6 +288,14 @@ class GeneEmbedding(object):
 
 
     def generate_vector(self, genes):
+        """
+        Compute an averagve vector representation for a set of genes in the learned gene embedding.
+
+        :param genes: List of genes to generate an average vector embedding.
+        :type genes: list
+        :return: The average vector for a set of genes in the gene embedding.
+        :rtype:  list
+        """
         vector = []
         for gene, vec in zip(self.genes, self.vector):
             if gene in genes:
@@ -291,6 +304,16 @@ class GeneEmbedding(object):
         return list(numpy.average(vector, axis=0))
 
     def generate_weighted_vector(self, genes, weights):
+        """
+        Compute an averagve vector representation for a set of genes in the learned gene embedding with a set of weights.
+
+        :param genes: List of genes to generate an average vector embedding.
+        :type genes: list
+        :param weights: List of floats in the same order of genes to weight each vector.
+        :type genes: list
+        :return: The average vector for a set of genes in the gene embedding.
+        :rtype:  list
+        """
         vector = []
         weight = []
         for gene, vec in zip(self.genes, self.vector):
@@ -326,6 +349,14 @@ class GeneEmbedding(object):
         return vecs, dims
 
     def get_similar_genes(self, vector):
+        """
+        Computes the similarity of each gene in the mebedding to a target vector representation.
+
+        :param vector: Vector representation used to find the gene similarity by cosine cosine.
+        :type genes: list or numpy.array
+        :return: A pandas dataframe holding the gene symbol column ("Gene") and a cosine similarity column ("Similarity").
+        :rtype:  pandas.DataFrmae
+        """
         distances = dict()
         targets = list(self.embeddings.keys())
         for target in targets:
@@ -341,6 +372,14 @@ class GeneEmbedding(object):
         return df
 
     def generate_network(self, threshold=0.5):
+        """
+        Computes networkx graph representation of the gene embedding.
+
+        :param threshold: Minimum cosine similarity to includea as edge in the graph.
+        :type genes: float
+        :return: A networkx graph with each gene as a node and the edges weighted by cosine similarity.
+        :rtype:  networkx.Graph
+        """
         G = nx.Graph()
         a = pandas.DataFrame.from_dict(self.embeddings).to_numpy()
         similarities = cosine_similarity(a.T)
@@ -372,8 +411,21 @@ class GeneEmbedding(object):
 
 class CellEmbedding(object):
 
-    def __init__(self, dataset, embed, log_normalize=True):
+    """
+    This class provides an interface to the cell embedding, which can be used for tasks such as generating a UMAP visualization, assigning cell types, and identifying the similarity between cells and metagenes.
 
+
+    :param dataset: The GeneVectorDataset object that was constructed from the original AnnData object.
+    :type dataset: genevector.dataset.GeneVectorDataset
+    :param embed: The GeneEmbeding object constructed from the dataset.
+    :type embed: genevector.dataset.GeneEmbedding
+    :param log_normalize: Weights average cell vector computed from all genes by the log normalized expression of each gene.
+    :type vector: bool
+    """
+
+    def __init__(self, dataset, embed, log_normalize=True):
+        """Constructor method
+        """
         self.context = dataset.data
         self.embed = embed
         self.data = collections.defaultdict(list)
@@ -420,6 +472,16 @@ class CellEmbedding(object):
                 self.normalized_marker_expression[cells[i]][genes[j]] = value
 
     def batch_correct(self, column, reference):
+        """
+        Corrects the matrix of cell vectors by computing vector representations for each category in a given variable in the dataset.
+
+        :param column: Covariate signal to eliminate in the the cell embedding.
+        :type column: str
+        :param column: Covariate category selected as the reference to remain uncorrected.
+        :type column: str
+        :return: The vectors representing the correction applied to each category to the reference category.
+        :rtype:  dict
+        """
         if not column:
             raise ValueError("Must supply batch label to correct.")
         
@@ -454,6 +516,18 @@ class CellEmbedding(object):
         return correction_vectors
 
     def get_predictive_genes(self, adata, label, n_genes=10):
+        """
+        Compute the top n most similar genes to a given variable in the dataset.
+
+        :param adata: anndata object generated from "get_adata", has "X_genevector" in the obsm dataframe.
+        :type column: anndata.AnnData
+        :param label: Label that defines the cateogies to find predictive genes.
+        :type column: str
+        :param n_genes: Number of most similar genes to return for each category.
+        :type column: int
+        :return: The most similar genes to each label stored in a dictionary.
+        :rtype:  dict
+        """
         vectors = dict()
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         comps = collections.defaultdict(list)
@@ -477,6 +551,18 @@ class CellEmbedding(object):
         return markers
 
     def get_inverse_predictive_genes(self, adata, label, n_genes=10):
+        """
+        Compute the top n least similar genes to a given variable in the dataset.
+
+        :param adata: anndata object generated from "get_adata", has "X_genevector" in the obsm dataframe.
+        :type column: anndata.AnnData
+        :param label: Label that defines the cateogies to find the least predictive genes.
+        :type column: str
+        :param n_genes: Number of least similar genes to return for each category.
+        :type column: int
+        :return: The least similar genes to each label stored in a dictionary.
+        :rtype:  dict
+        """
         vectors = dict()
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         comps = collections.defaultdict(list)
@@ -523,6 +609,24 @@ class CellEmbedding(object):
         return normalized_expression
 
     def phenotype_probability(self, adata, phenotype_markers, return_distances=False, expression_weighted=False, target_col="genevector"):
+        """
+        Probablistically assign phenotypes based on a set of cell type labels and associated markers. 
+        Can optionally return the original cosine distances and perform the assignment based on expression weight gene vectors.
+        Loads into the anndata the pseudo-probabilities for each cell type and the deterministic label taken from the maximum probability over cell types.
+
+        :param adata: anndata object generated from "get_adata", has "X_genevector" in the obsm dataframe.
+        :type column: anndata.AnnData
+        :param phenotype_markers: Dictionary of cell type labels (key) to gene markers used to define the cell type as a list (value).
+        :type phenotype_markers: dict
+        :param return_distances: Change the return type to a tuple that includes a dictionary containing the actual cosine distances alongside the phenotype probabilities.
+        :type column: bool
+        :param expression_weighted: Compute similarit to each cell using the expression weightedy marker gnene vector.
+        :type column: bool
+        :param target_col: Column label to load in deterministic cell asssignments in the obs data frame of the anndata object.
+        :type target_col: bool
+        :return: Anndata with cell type labels and probabilities, or optionally a tuple with the anndata and the raw cosine similarities.
+        :rtype:  anndata.AnnData
+        """
         def normalized_marker_expression_sub(self, normalized_matrix, genes, cells, markers):
             normalized_expression = collections.defaultdict(dict)
             normalized_matrix.eliminate_zeros()
@@ -663,6 +767,16 @@ class CellEmbedding(object):
 
 
     def get_adata(self, min_dist=0.3, n_neighbors=50):
+        """
+        Return a anndata object to use in downstream analyses that contains the cell embedding matrix (under "X_genevector" in obsm) alongisde the neighbors graph and UMAP embedding computed using the cell vectors.
+
+        :param min_dist: UMAP generation parameter.
+        :type min_dist: float
+        :param n_neighbors: Number of neighbors defined by cosine dsimilarity to include in neghborhood graph.
+        :type: n_neighbors: int
+        :return: Anndata with cell embedding stored in metadata ("obsm").
+        :rtype:  anndata.AnnData
+        """
         print(bcolors.OKGREEN + "Loading embedding in X_genevector." + bcolors.ENDC)
         print(bcolors.OKGREEN + "Running Scanpy neighbors and umap." + bcolors.ENDC)
         adata = self.context.adata.copy()
@@ -679,6 +793,13 @@ class CellEmbedding(object):
 
     @staticmethod
     def plot_confusion_matrix(adata,label1,label2):
+        """
+        Plot accuracy of GeneVector cell type assignments with a set of known cell types or clusters.
+
+        :param adata: AnnData object with both genevector cell type labels and ground truth cell type or cluster or assignment.
+        :type adata: anndata.AnnData
+        :param label1: Target column for GeneVector cell type assignments.
+        """
         gv_ct = adata.obs[label1].tolist()
         target_ct = adata.obs[label2].tolist()
         def plot_cm(y_true, y_pred, figsize=(6,6)):

@@ -114,6 +114,32 @@ class Context(object):
 
 class GeneVectorDataset(Dataset):
 
+    """
+    This class provides extends the torch Dataset class with functionality to compute mutual information between genes and generate batches of input and output data for each gene pair for training..
+
+    :param adata: The AnnData Scanpy object that holds the dataset with expression data in .X.
+    :type adata: AnnData
+    :param device: The device to load torch dataset ("cpu","cuda","mips" for torch metal acceleration).
+    :type device: str
+    :param mi_scores: Optionallu side load a dictionary of two levels containing the training target for each gene pair.
+    :type mi_scores: dict of dict
+    :param processes: Not functional, adding support for multiprocessing MI computation.
+    :type processes: int
+    """
+
+    """
+    This class provides extends the torch Dataset class with functionality to compute mutual information between genes and generate batches of input and output data for each gene pair for training..
+
+    :param adata: The AnnData Scanpy object that holds the dataset with expression data in .X.
+    :type adata: AnnData
+    :param device: The device to load torch dataset ("cpu","cuda","mips" for torch metal acceleration).
+    :type device: str
+    :param mi_scores: Optionallu side load a dictionary of two levels containing the training target for each gene pair.
+    :type mi_scores: dict of dict
+    :param processes: Not functional, adding support for multiprocessing MI computation.
+    :type processes: int
+    """
+
     def __init__(self, adata, device="cpu", mi_scores=None, processes=1, apply_qc=True, entropy_threshold=1.):
         adata.var.index = [str(x).upper() for x in adata.var.index.tolist()]
         adata.X = sparse.csr_matrix(adata.X)
@@ -133,7 +159,7 @@ class GeneVectorDataset(Dataset):
         X = numpy.array(X.T)
         gene_to_row = list(zip(adata.var.index.tolist(), X))
         gene_entropy = dict()
-        import tqdm        for g, exp in tqdm.tqdm(gene_to_row):
+        for g, exp in tqdm.tqdm(gene_to_row):
             counts = np.unique(exp, return_counts = True)
             gene_entropy[g] = entropy(counts[1][1:])
         return gene_entropy

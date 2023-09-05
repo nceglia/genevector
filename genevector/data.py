@@ -222,7 +222,8 @@ class GeneVectorDataset(Dataset):
         print(bcolors.OKGREEN + "Getting gene pairs combinations." + bcolors.ENDC)
         if self.mi_scores == None:
             mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
-        
+        else:
+            mi_scores = self.mi_scores
         bcs = dict()
         maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=1).T.todense())[0]))
         vgenes = []

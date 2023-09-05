@@ -145,6 +145,7 @@ class GeneVectorDataset(Dataset):
         adata.X = sparse.csr_matrix(adata.X)
         if apply_qc:
             adata = self.quality_control(adata,entropy_threshold=entropy_threshold)
+        self.adata = adata
         self.data = Context.build(adata)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene

@@ -422,7 +422,6 @@ class CellEmbedding(object):
     def batch_correct(self, column, reference):
         if not column:
             raise ValueError("Must supply batch label to correct.")
-        
         column_labels = dict(zip(self.context.cells, self.context.metadata[column]))
         labels = []
         for key in self.data.keys():

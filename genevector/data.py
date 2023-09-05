@@ -9,6 +9,7 @@ import os
 from multiprocessing import Pool
 import tqdm
 import collections
+from scipy.stats import entropy
 
 
 class bcolors:
@@ -113,9 +114,11 @@ class Context(object):
 
 class GeneVectorDataset(Dataset):
 
-    def __init__(self, adata, device="cpu", mi_scores=None, processes=1):
+    def __init__(self, adata, device="cpu", mi_scores=None, processes=1, apply_qc=True, entropy_threshold=1.):
         adata.var.index = [str(x).upper() for x in adata.var.index.tolist()]
         adata.X = sparse.csr_matrix(adata.X)
+        if apply_qc:
+            adata = self.quality_control(adata,entropy_threshold=entropy_threshold)
         self.data = Context.build(adata)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene
@@ -123,6 +126,27 @@ class GeneVectorDataset(Dataset):
         self.device = device
         self.mi_scores = mi_scores
         self.processes = processes
+
+    @staticmethod
+    def get_gene_entropy(adata):
+        X = adata.X.todense()
+        X = numpy.array(X.T)
+        gene_to_row = list(zip(adata.var.index.tolist(), X))
+        gene_entropy = dict()
+        import tqdm        for g, exp in tqdm.tqdm(gene_to_row):
+            counts = np.unique(exp, return_counts = True)
+            gene_entropy[g] = entropy(counts[1][1:])
+        return gene_entropy
+
+    @staticmethod
+    def quality_control(adata, entropy_threshold = 1.):
+        adata.var_names_make_unique()
+        print(bcolors.BOLD + "Removing Genes..."+ bcolors.ENDC)
+        gene_entropy = GeneVectorDataset.get_gene_entropy(adata)
+        vgenes = [x for x,y in gene_entropy.items() if y > entropy_threshold]
+        adata = adata[:,vgenes]
+        print(bcolors.OKGREEN + "Selecting {} Genes with greater than {} nats entropy.".format(len(vgenes), entropy_threshold)+ bcolors.ENDC)
+        return adata.copy()
 
     # def generate_mi_scores(self):
     #     mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
@@ -164,9 +188,14 @@ class GeneVectorDataset(Dataset):
     #     print("Finished in %s seconds." % (time.time() - start_time))
     #     self.mi_scores = mi_scores
 
+    def load_targets(self, targets):
+        self.mi_scores = targets
+
     def generate_mi_scores(self):
         print(bcolors.OKGREEN + "Getting gene pairs combinations." + bcolors.ENDC)
-        mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
+        if self.mi_scores == None:
+            mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
+        
         bcs = dict()
         maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=1).T.todense())[0]))
         vgenes = []
@@ -174,7 +203,14 @@ class GeneVectorDataset(Dataset):
             bcs[gene] = set(bc)
             if maxs[gene.upper()] > 1:
                 vgenes.append(gene)
-        pairs = list(itertools.combinations(vgenes, 2))
+        ipairs = list(itertools.combinations(vgenes, 2))
+        pairs = []
+        for p1,p2 in ipairs:
+            if p1 in mi_scores and p2 in mi_scores[p1]:
+                continue
+            if p2 in mi_scores and p1 in mi_scores[p2]:
+                continue
+            pairs.append((p1,p2))
         counts = collections.defaultdict(lambda : collections.defaultdict(int))
         self.num_pairs = len(pairs)
         
@@ -268,8 +304,7 @@ class GeneVectorDataset(Dataset):
         print(bcolors.WARNING+"*****************"+bcolors.ENDC)
         print(bcolors.HEADER+"Loading Dataset."+bcolors.ENDC)
         print(bcolors.WARNING+"*****************\n"+bcolors.ENDC)
-        if self.mi_scores == None:
-            self.generate_mi_scores()
+        self.generate_mi_scores()
 
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
         index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
@@ -279,6 +314,15 @@ class GeneVectorDataset(Dataset):
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
+
+        matrix = numpy.array(self.adata.X.T.todense())
+        correlation_matrix = numpy.corrcoef(matrix, rowvar=True)
+        correlation_dict = {}
+        names=self.adata.var.index.tolist()
+        for i, row_name in enumerate(names):
+            correlation_dict[row_name] = {}
+            for j, col_name in enumerate(names):
+                correlation_dict[row_name][col_name] = correlation_matrix[i, j]
 
         print(bcolors.OKGREEN + "Loading Batches for Training." + bcolors.ENDC)
 
@@ -290,10 +334,10 @@ class GeneVectorDataset(Dataset):
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
                 value = self.mi_scores[gene][cgene] * c**2
-                if value > 0:
-                    self._xij.append(value)
-                else:
-                    self._xij.append(0.)
+                # if value > 0:
+                self._xij.append(value * correlation_dict[gene][cgene])
+                # else:
+                #     self._xij.append(0.)
 
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()

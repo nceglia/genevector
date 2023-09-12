@@ -10,7 +10,8 @@ from multiprocessing import Pool
 import tqdm
 import collections
 from scipy.stats import entropy
-
+from sklearn import feature_extraction
+import pandas
 
 class bcolors:
     HEADER = '\033[95m'
@@ -332,16 +333,19 @@ class GeneVectorDataset(Dataset):
         print(bcolors.WARNING+"*****************"+bcolors.ENDC)
         print(bcolors.HEADER+"Loading Dataset."+bcolors.ENDC)
         print(bcolors.WARNING+"*****************\n"+bcolors.ENDC)
-        self.generate_mi_scores()
+        if self.mi_scores == None:
+            self.generate_mi_scores()
+        print(bcolors.FAIL+"MI Loaded."+bcolors.ENDC)
+
 
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
         index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
         self.data.gene2id = gene_index
         self.data.id2gene = index_gene
 
-        self._i_idx = list()
-        self._j_idx = list()
-        self._xij = list()
+        print(bcolors.FAIL+"Finding coefficients."+bcolors.ENDC)
+        
+        # cov = numpy.corrcoef(self.adata.X.T.todense(),rowvar=True)
 
         matrix = numpy.array(self.adata.X.T.todense())
         correlation_matrix = numpy.corrcoef(matrix, rowvar=True)
@@ -351,21 +355,26 @@ class GeneVectorDataset(Dataset):
             correlation_dict[row_name] = {}
             for j, col_name in enumerate(names):
                 correlation_dict[row_name][col_name] = correlation_matrix[i, j]
+        print(bcolors.FAIL+"Finished."+bcolors.ENDC)
+
+        self._i_idx = list()
+        self._j_idx = list()
+        self._xij = list()
+        pairs = list(itertools.combinations(names,2))
+        self.num_pairs = len(pairs)
 
         print(bcolors.OKGREEN + "Loading Batches for Training." + bcolors.ENDC)
-
-        for gene in tqdm.tqdm(self.data.genes):
-            for cgene in self.data.genes:
-                if gene == cgene: continue
-                wi = self.data.gene2id[gene]
-                ci = self.data.gene2id[cgene]
-                self._i_idx.append(wi)
-                self._j_idx.append(ci)
-                value = self.mi_scores[gene][cgene] * c**2
-                # if value > 0:
-                self._xij.append(value * correlation_dict[gene][cgene])
-                # else:
-                #     self._xij.append(0.)
+    
+        for genes in tqdm.tqdm(pairs):
+            gene = genes[0]
+            cgene = genes[1]
+            wi = self.data.gene2id[gene]
+            ci = self.data.gene2id[cgene]
+            self._i_idx.append(wi)
+            self._j_idx.append(ci)
+            mivalue = self.mi_scores[gene][cgene] * c
+            value = correlation_dict[gene][cgene]
+            self._xij.append(mivalue * value)
 
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()

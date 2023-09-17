@@ -226,11 +226,11 @@ class GeneVectorDataset(Dataset):
         else:
             mi_scores = self.mi_scores
         bcs = dict()
-        maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=1).T.todense())[0]))
+        maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=0).T.todense()).T.tolist()[0]))
         vgenes = []
         for gene, bc in self.data.data.items():
             bcs[gene] = set(bc)
-            if maxs[gene.upper()] > 1:
+            if maxs[gene.upper()] > 0:
                 vgenes.append(gene)
         ipairs = list(itertools.combinations(vgenes, 2))
         pairs = []
@@ -335,6 +335,7 @@ class GeneVectorDataset(Dataset):
         print(bcolors.WARNING+"*****************\n"+bcolors.ENDC)
         if self.mi_scores == None:
             self.generate_mi_scores()
+        
         print(bcolors.FAIL+"MI Loaded."+bcolors.ENDC)
 
 
@@ -347,15 +348,15 @@ class GeneVectorDataset(Dataset):
         
         # cov = numpy.corrcoef(self.adata.X.T.todense(),rowvar=True)
 
-        matrix = numpy.array(self.adata.X.T.todense())
-        correlation_matrix = numpy.corrcoef(matrix, rowvar=True)
-        correlation_dict = {}
+        # matrix = numpy.array(self.adata.X.T.todense())
+        # correlation_matrix = numpy.corrcoef(matrix, rowvar=True)
+        # correlation_dict = {}
         names=self.adata.var.index.tolist()
-        for i, row_name in enumerate(names):
-            correlation_dict[row_name] = {}
-            for j, col_name in enumerate(names):
-                correlation_dict[row_name][col_name] = correlation_matrix[i, j]
-        print(bcolors.FAIL+"Finished."+bcolors.ENDC)
+        # for i, row_name in enumerate(names):
+        #     correlation_dict[row_name] = {}
+        #     for j, col_name in enumerate(names):
+        #         correlation_dict[row_name][col_name] = correlation_matrix[i, j]
+        # print(bcolors.FAIL+"Finished."+bcolors.ENDC)
 
         self._i_idx = list()
         self._j_idx = list()
@@ -373,8 +374,8 @@ class GeneVectorDataset(Dataset):
             self._i_idx.append(wi)
             self._j_idx.append(ci)
             mivalue = self.mi_scores[gene][cgene] * c
-            value = correlation_dict[gene][cgene]
-            self._xij.append(mivalue * value)
+            # value = correlation_dict[gene][cgene]
+            self._xij.append(mivalue) #* value)
 
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()

@@ -40,7 +40,7 @@ cmps = GeneVector(dataset,
                   emb_dimension=100)
 
 #Generate Embeddings
-cmps.train(100,threshold=1e-7)
+cmps.train(3000,threshold=1e-7)
 embed = GeneEmbedding(embedding_file, dataset, vector="average")
 cembed = CellEmbedding(dataset, embed)
 adata = cembed.get_adata()

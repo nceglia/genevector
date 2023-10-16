@@ -30,7 +30,7 @@ class Context(object):
         pass
 
     @classmethod
-    def build(context_class, adata, threads=2):
+    def build(context_class, adata, threads=2, load_expression=True):
         try:
             adata.var.index = [x.decode("utf-8") for x in adata.var.index]
         except Exception as e:
@@ -47,11 +47,15 @@ class Context(object):
                     context.metadata[column] = [x.decode("utf-8") for x in context.metadata[column]]
         except Exception as e:
             pass
+        print("Running...")
         context.cells = context.adata.obs.index
         context.cell_index, context.index_cell = Context.index_cells(context.cells)
-        context.data = context.expression(context.normalized_matrix, \
-                                          context.genes, \
-                                          context.cells)
+        if load_expression:
+            context.data = context.expression(context.normalized_matrix, \
+                                            context.genes, \
+                                            context.cells)
+        else:
+            print("Skipping expression load.")
         context.gene_index, context.index_gene = Context.index_geneset(adata.var.index.tolist())
         context.gene2id = context.gene_index
         context.id2gene = context.index_gene
@@ -141,19 +145,20 @@ class GeneVectorDataset(Dataset):
     :type processes: int
     """
 
-    def __init__(self, adata, device="cpu", mi_scores=None, processes=1, apply_qc=True, entropy_threshold=1.):
+    def __init__(self, adata, device="cpu", mi_scores=None, processes=1, apply_qc=True, entropy_threshold=1.,load_expression=False, signed_mi=False):
         adata.var.index = [str(x).upper() for x in adata.var.index.tolist()]
         adata.X = sparse.csr_matrix(adata.X)
         if apply_qc:
-            adata = self.quality_control(adata,entropy_threshold=entropy_threshold)
+            adata = self.quality_control(adata, entropy_threshold=entropy_threshold)
         self.adata = adata
-        self.data = Context.build(adata)
+        self.data = Context.build(adata, load_expression=load_expression)
         self._word2id = self.data.gene2id
         self._id2word = self.data.id2gene
         self._vocab_len = len(self._word2id)
         self.device = device
         self.mi_scores = mi_scores
         self.processes = processes
+        self.signed_mi = signed_mi
 
     @staticmethod
     def get_gene_entropy(adata):
@@ -175,46 +180,6 @@ class GeneVectorDataset(Dataset):
         adata = adata[:,vgenes]
         print(bcolors.OKGREEN + "Selecting {} Genes with greater than {} nats entropy.".format(len(vgenes), entropy_threshold)+ bcolors.ENDC)
         return adata.copy()
-
-    # def generate_mi_scores(self):
-    #     mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
-    #     bcs = dict()
-    #     maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=1).T.todense())[0]))
-    #     vgenes = []
-    #     for gene, bc in self.data.data.items():
-    #         bcs[gene] = set(bc)
-    #         if maxs[gene.upper()] > 1:
-    #             vgenes.append(gene.upper())
-
-    #     exp = dict()
-    #     bins = dict()
-    #     indices = dict()
-    #     adata = self.data.adata
-    #     print(bcolors.OKGREEN + "Computing Expression Bins." + bcolors.ENDC)
-    #     for gene in tqdm.tqdm(vgenes):
-    #         exp[gene] = numpy.array(adata.X[:,adata.var.index.tolist().index(gene)].todense().T.tolist()[0])
-    #         bins[gene] = self.rna_expr_percentile_hist(exp[gene])
-    #         indices[gene] = self.rna_expr_to_bin_inds(exp[gene],bins[gene])
-        
-    #     pairs = list(itertools.combinations(vgenes, 2))
-    #     self.num_pairs = len(pairs)
-
-    #     joints = []
-    #     for p1,p2 in tqdm.tqdm(pairs):
-    #         nbins1 = bins[p1].shape[0]+1
-    #         nbins2 = bins[p2].shape[0]+1
-    #         joints.append((indices[p1],indices[p2],nbins1,nbins2))
-
-    #     print(bcolors.OKGREEN + "Computing Joint Distributions and Mutual Information." + bcolors.ENDC)
-    #     import time
-    #     start_time = time.time()
-    #     with Pool(processes=self.processes) as pool:
-    #         result = pool.starmap(self.mutual_info, joints)
-    #         for ps, mi in zip(pairs, result):
-    #             mi_scores[ps[0]][ps[1]] = mi
-    #             mi_scores[ps[1]][ps[0]] = mi
-    #     print("Finished in %s seconds." % (time.time() - start_time))
-    #     self.mi_scores = mi_scores
 
     def load_targets(self, targets):
         self.mi_scores = targets
@@ -268,7 +233,6 @@ class GeneVectorDataset(Dataset):
             mi_scores[p1][p2] = mi
             mi_scores[p2][p1] = mi
         self.mi_scores = mi_scores
-
 
     @staticmethod
     def mutual_info():
@@ -335,28 +299,40 @@ class GeneVectorDataset(Dataset):
         print(bcolors.WARNING+"*****************\n"+bcolors.ENDC)
         if self.mi_scores == None:
             self.generate_mi_scores()
+            if self.signed_mi:
+                print("Directional MI.")
+                correlation_matrix = numpy.corrcoef(self.adata.X.todense())
+                mi_scores = self.mi_scores
+                correlation_dict = {}
+
+                names=self.adata.var.index.tolist()
+                for i, row_name in enumerate(names):
+                    correlation_dict[row_name] = {}
+                    for j, col_name in enumerate(names):
+                        correlation_dict[row_name][col_name] = correlation_matrix[i, j]
+
+                modified_value_dict = {}
+
+                for row_name in correlation_dict.keys():
+                    modified_value_dict[row_name] = {}
+                    for col_name in correlation_dict[row_name].keys():
+                        original_value = mi_scores[row_name][col_name]
+                        if correlation_dict[row_name][col_name] < 0:
+                            modified_value = -original_value
+                        else:
+                            modified_value = original_value
+                        modified_value_dict[row_name][col_name] = modified_value
+
+                self.mi_scores = modified_value_dict
         
         print(bcolors.FAIL+"MI Loaded."+bcolors.ENDC)
-
 
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
         index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
         self.data.gene2id = gene_index
         self.data.id2gene = index_gene
 
-        print(bcolors.FAIL+"Finding coefficients."+bcolors.ENDC)
-        
-        # cov = numpy.corrcoef(self.adata.X.T.todense(),rowvar=True)
-
-        # matrix = numpy.array(self.adata.X.T.todense())
-        # correlation_matrix = numpy.corrcoef(matrix, rowvar=True)
-        # correlation_dict = {}
         names=self.adata.var.index.tolist()
-        # for i, row_name in enumerate(names):
-        #     correlation_dict[row_name] = {}
-        #     for j, col_name in enumerate(names):
-        #         correlation_dict[row_name][col_name] = correlation_matrix[i, j]
-        # print(bcolors.FAIL+"Finished."+bcolors.ENDC)
 
         self._i_idx = list()
         self._j_idx = list()
@@ -374,8 +350,7 @@ class GeneVectorDataset(Dataset):
             self._i_idx.append(wi)
             self._j_idx.append(ci)
             mivalue = self.mi_scores[gene][cgene] * c
-            # value = correlation_dict[gene][cgene]
-            self._xij.append(mivalue) #* value)
+            self._xij.append(mivalue)
 
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()

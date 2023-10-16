@@ -11,6 +11,7 @@ from scipy.special import softmax
 from scipy.spatial import distance
 import numpy
 from sklearn.preprocessing import StandardScaler
+from sklearn.mixture import GaussianMixture
 from scipy.sparse import csr_matrix
 import numpy as np
 import operator
@@ -261,22 +262,6 @@ class GeneEmbedding(object):
         df = pandas.DataFrame.from_dict({"Gene":genes, "Similarity":distance})
         return df
 
-    def clusters(self, clusters):
-        average_vector = dict()
-        gene_to_cluster = collections.defaultdict(list)
-        matrix = collections.defaultdict(list)
-        total_average_vector = []
-        for gene, cluster in zip(self.context.expressed_genes, clusters):
-            if gene in self.embeddings:
-                matrix[cluster].append(self.embeddings[gene])
-                gene_to_cluster[cluster].append(gene)
-                total_average_vector.append(self.embeddings[gene])
-        self.total_average_vector = list(numpy.average(total_average_vector, axis=0))
-        for cluster, vectors in matrix.items():
-            xvec = list(numpy.average(vectors, axis=0))
-            average_vector[cluster] = numpy.subtract(xvec,self.total_average_vector)
-        return average_vector, gene_to_cluster
-
     def generate_weighted_vector(self, genes, markers, weights):
         vector = []
         for gene, vec in zip(self.genes, self.vector):
@@ -454,7 +439,6 @@ class CellEmbedding(object):
             except Exception as e:
                 cells_with_no_counts += 1
                 continue
-            
             self.data[cell] = vectors
             self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
         print("Found {} Cells with No Counts.".format(cells_with_no_counts))
@@ -581,20 +565,6 @@ class CellEmbedding(object):
             ct_sig = self.embed.get_similar_genes(mvec)[-1.*n_genes:]["Gene"].tolist()
             markers[x] = ct_sig
         return markers
-
-    def compute_cell_similarities(self, barcode_to_label):
-        vectors = dict()
-        cell_similarities = dict()
-        vectors, _ = self._cell_vectors(barcode_to_label)
-        for label, vector in vectors.items():
-            distances = dict()
-            for label2, vector2 in vectors.items():
-                xdist = []
-                distance = float(cosine_similarity(numpy.array(vector).reshape(1, -1),numpy.array(vector2).reshape(1, -1))[0])
-                xdist.append(distance)
-                distances[label2] = distance
-            cell_similarities[label] = distances
-        return cell_similarities
 
     def normalized_marker_expression(self, normalized_matrix, genes, cells, markers):
         normalized_expression = collections.defaultdict(dict)
@@ -764,6 +734,51 @@ class CellEmbedding(object):
             else:
                 return adata
 
+    def cluster(self, adata, up_markers, down_markers=dict()):
+        up_only = set(up_markers.keys()).difference(set(down_markers.keys()))
+        down_markers = dict()
+        down_only = set(down_markers.keys()).difference(set(up_markers.keys()))
+        up_and_down = set(down_markers.keys()).intersection(set(up_markers.keys()))
+        phs = set(up_markers.keys()).union(set(down_markers.keys()))
+        for ph in up_only:
+            genes = up_markers[ph]
+            vec = self.embed.generate_vector(genes)
+            odists = []
+            mapped_components = dict(zip(list(self.data.keys()),self.matrix))
+            for x in tqdm.tqdm(adata.obs.index):
+                dist = 1. - distance.cosine(mapped_components[x], numpy.array(vec))
+                odists.append(dist)
+            adata.obs[ph] = odists
+        for ph in down_only:
+            genes = down_markers[ph]
+            vec = self.embed.generate_vector(genes)
+            odists = []
+            mapped_components = dict(zip(list(self.data.keys()),self.matrix))
+            for x in tqdm.tqdm(adata.obs.index):
+                dist = distance.cosine(mapped_components[x], numpy.array(vec))
+                odists.append(dist)
+            adata.obs[ph] = odists
+        for ph in up_and_down:
+            print(ph)
+            up_genes = up_markers[ph]
+            down_genes = down_markers[ph]
+            vec_up = self.embed.generate_vector(up_genes)
+            vec_down = self.embed.generate_vector(down_genes)
+            vec = numpy.subtract(vec_up,vec_down)
+            odists = []
+            mapped_components = dict(zip(list(self.data.keys()),self.matrix))
+            for x in tqdm.tqdm(adata.obs.index):
+                dist = 1.-distance.cosine(mapped_components[x], numpy.array(vec))
+                odists.append(dist)
+            adata.obs[ph] = odists
+        dist = adata.obs[phs].to_numpy()
+        gm = GaussianMixture(n_components=len(phs), random_state=42, verbose=True).fit(dist)
+        adata.obs["genevector"] = ["C"+str(x) for x in gm.predict(dist)]
+        probs = gm.predict_proba(dist) 
+        for c, prob in zip(set(adata.obs["genevector"]), probs.T):
+            adata.obs["{}_probability".format(c)] = prob
+        return adata
+
 
     def get_adata(self, min_dist=0.3, n_neighbors=50):
         """
@@ -824,21 +839,3 @@ class CellEmbedding(object):
             _, ax = plt.subplots(figsize=figsize)
             sns.heatmap(cm, annot=annot, fmt='', ax=ax)
         plot_cm(target_ct,gv_ct)
-
-
-    def group_cell_vectors(self, label):
-        barcode_to_label = dict(zip(self.context.adata.obs.index.tolist(),self.context.adata.obs[label]))
-        label_vector = dict()
-        labels = []
-        for cell, vectors in self.data.items():
-            vector = list(numpy.median(vectors, axis=0))
-            labels.append(barcode_to_label[cell])
-            label_vector[barcode_to_label[cell]] = vector
-        for cell, vectors in self.data.items():
-            _vectors = []
-            for vector in vectors:
-                _vectors.append(numpy.subtract(vector, label_vector[barcode_to_label[cell]]))
-            vectors = _vectors
-            vector = list(numpy.median(vectors, axis=0))
-            label_vector[barcode_to_label[cell]] = vector
-        return label_vector, labels

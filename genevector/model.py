@@ -51,9 +51,29 @@ class GeneVectorModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, c=1., device="cpu", correlation=False):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, c=1., device="cpu", correlation_only=False, regularization_term=True):
+        """
+        GeneVector model for training a gene embedding.
+
+        :param dataset: GeneVector dataset.
+        :type min_dist: GeneVector.dataset.GeneVectorDataset
+        :param output_file: Flat file to store gene embedding. Input weights and output weights stored in with "2" suffix.
+        :type output_file: str
+        :param emb_dimension: Number of hidden units and dimension of latent representation.
+        :type output_file: int
+        :param batch_size: Size to batch gene pairs, defaults to all gene pairs.
+        :type output_file: int or None (default).
+        :param c: Scale factor for loss.
+        :type c: int
+        :param device: Sets Torch device ("cpu", "cuda:0", "mips", etc)
+        :type device: str
+        :param correlation_only: Only use correlation coefficients for training (used for comparisons in paper.)
+        :type device: bool
+        :param regularization_term: Only use correlation coefficients for training (used for comparisons in paper.)
+        :type device: bool
+        """
         self.dataset = dataset
-        if correlation == False:
+        if correlation_only == False:
             self.dataset.create_inputs_outputs(c=c)
         else:
             self.dataset.generate_correlation(c=c)
@@ -78,8 +98,11 @@ class GeneVector(object):
         self.epoch = 0
         self.loss_values = list()
         self.mean_loss_values = []
+        self.rterm = regularization_term
 
     def train(self, epochs, threshold=None, update_interval=20):
+        """Constructor method
+        """
         last_loss = 0.
         for _ in range(1, epochs+1):
             batch_i = 0
@@ -87,7 +110,9 @@ class GeneVector(object):
                 batch_i += 1
                 self.optimizer.zero_grad()
                 outputs = self.model(i_idx, j_idx)
-                loss = self.loss(outputs, x_ij)
+                loss = self.loss(outputs, x_ij) + outputs.sum().abs()
+                if self.rterm:
+                    loss += outputs.sum().abs()
                 loss.backward()
                 self.optimizer.step()
                 self.loss_values.append(loss.item())

@@ -735,11 +735,23 @@ class CellEmbedding(object):
                 return adata
 
     def cluster(self, adata, up_markers, down_markers=dict()):
+        """
+        Run GaussianMixture over cosine similarities for up and down markers.
+
+        :param adata: AnnData object with X_genevector embedding.
+        :type adata: anndata.AnnData
+        :param up_markers: Dictionary of up regulated genes defining phenotypes.
+        :type: up_markers: dict
+        :param down_markers: Dictionary of down regulated genes defining phenotypes (optional).
+        :type: down_markers: dict
+        :return: Anndata with clusters stored in metadata ("gcluster") and probabilities ("{} Probability").
+        :rtype:  anndata.AnnData
+        """
         up_only = set(up_markers.keys()).difference(set(down_markers.keys()))
         down_markers = dict()
         down_only = set(down_markers.keys()).difference(set(up_markers.keys()))
         up_and_down = set(down_markers.keys()).intersection(set(up_markers.keys()))
-        phs = set(up_markers.keys()).union(set(down_markers.keys()))
+        phs = list(set(up_markers.keys()).union(set(down_markers.keys())))
         for ph in up_only:
             genes = up_markers[ph]
             vec = self.embed.generate_vector(genes)
@@ -773,9 +785,9 @@ class CellEmbedding(object):
             adata.obs[ph] = odists
         dist = adata.obs[phs].to_numpy()
         gm = GaussianMixture(n_components=len(phs), random_state=42, verbose=True).fit(dist)
-        adata.obs["genevector"] = ["C"+str(x) for x in gm.predict(dist)]
+        adata.obs["gcluster"] = ["C"+str(x) for x in gm.predict(dist)]
         probs = gm.predict_proba(dist) 
-        for c, prob in zip(set(adata.obs["genevector"]), probs.T):
+        for c, prob in zip(set(adata.obs["gcluster"]), probs.T):
             adata.obs["{}_probability".format(c)] = prob
         return adata
 

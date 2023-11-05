@@ -26,6 +26,10 @@ class bcolors:
 
 class Context(object):
 
+    """
+    This class provides an interface for parsing expression from AnnData objects.
+    """
+
     def __init__(self):
         pass
 
@@ -124,7 +128,7 @@ class GeneVectorDataset(Dataset):
 
     :param adata: The AnnData Scanpy object that holds the dataset with expression data in .X.
     :type adata: AnnData
-    :param device: The device to load torch dataset ("cpu","cuda","mips" for torch metal acceleration).
+    :param device: The device to load torch dataset ("cpu","cuda:0","mips" for torch metal acceleration).
     :type device: str
     :param mi_scores: Optionallu side load a dictionary of two levels containing the training target for each gene pair.
     :type mi_scores: dict of dict
@@ -132,20 +136,9 @@ class GeneVectorDataset(Dataset):
     :type processes: int
     """
 
-    """
-    This class provides extends the torch Dataset class with functionality to compute mutual information between genes and generate batches of input and output data for each gene pair for training..
-
-    :param adata: The AnnData Scanpy object that holds the dataset with expression data in .X.
-    :type adata: AnnData
-    :param device: The device to load torch dataset ("cpu","cuda","mips" for torch metal acceleration).
-    :type device: str
-    :param mi_scores: Optionallu side load a dictionary of two levels containing the training target for each gene pair.
-    :type mi_scores: dict of dict
-    :param processes: Not functional, adding support for multiprocessing MI computation.
-    :type processes: int
-    """
-
-    def __init__(self, adata, device="cpu", mi_scores=None, processes=1, apply_qc=True, entropy_threshold=1.,load_expression=False, signed_mi=False):
+    def __init__(self, adata, device="cpu", mi_scores=None, processes=1, apply_qc=False, entropy_threshold=1.,load_expression=True, signed_mi=True):
+        """Constructor method
+        """
         adata.var.index = [str(x).upper() for x in adata.var.index.tolist()]
         adata.X = sparse.csr_matrix(adata.X)
         if apply_qc:
@@ -162,6 +155,14 @@ class GeneVectorDataset(Dataset):
 
     @staticmethod
     def get_gene_entropy(adata):
+        """
+        Compute individual gene entropy.
+
+        :param adata: The AnnData Scanpy object that holds the dataset with expression data in .X.
+        :type adata: AnnData
+        :return: Dictionary of gene to entropy.
+        :rtype: dict
+        """
         X = adata.X.todense()
         X = numpy.array(X.T)
         gene_to_row = list(zip(adata.var.index.tolist(), X))
@@ -173,6 +174,17 @@ class GeneVectorDataset(Dataset):
 
     @staticmethod
     def quality_control(adata, entropy_threshold = 1.):
+        """
+        Select genes with an entropy above the given threshold. Used in place of highly variable gene selection.
+
+        :param adata: The AnnData Scanpy object that holds the dataset with expression data in .X.
+        :type adata: AnnData
+        :param entropy_threshold: Minimum entropy for a gene to be included in training and downstream analyses.
+        :type entropy_threshold: float
+
+        :return: Filtered AnnData object.
+        :rtype: anndata.AnnData
+        """
         adata.var_names_make_unique()
         print(bcolors.BOLD + "Removing Genes..."+ bcolors.ENDC)
         gene_entropy = GeneVectorDataset.get_gene_entropy(adata)
@@ -182,6 +194,12 @@ class GeneVectorDataset(Dataset):
         return adata.copy()
 
     def load_targets(self, targets):
+        """
+        Load precomputed target values. Can be mutual information.
+
+        :param targets: Dictionary of dictionaries mapping target value to gene pairs.
+        :type targets: dict
+        """
         self.mi_scores = targets
 
     def generate_mi_scores(self):
@@ -299,31 +317,32 @@ class GeneVectorDataset(Dataset):
         print(bcolors.WARNING+"*****************\n"+bcolors.ENDC)
         if self.mi_scores == None:
             self.generate_mi_scores()
-            if self.signed_mi:
-                print("Directional MI.")
-                correlation_matrix = numpy.corrcoef(self.adata.X.todense())
-                mi_scores = self.mi_scores
-                correlation_dict = {}
+        
+        if self.signed_mi:
+            print("...Directional MI....")
+            correlation_matrix = numpy.corrcoef(self.adata.X.todense())
+            mi_scores = self.mi_scores
+            correlation_dict = {}
 
-                names=self.adata.var.index.tolist()
-                for i, row_name in enumerate(names):
-                    correlation_dict[row_name] = {}
-                    for j, col_name in enumerate(names):
-                        correlation_dict[row_name][col_name] = correlation_matrix[i, j]
+            names=self.adata.var.index.tolist()
+            for i, row_name in enumerate(names):
+                correlation_dict[row_name] = {}
+                for j, col_name in enumerate(names):
+                    correlation_dict[row_name][col_name] = correlation_matrix[i, j]
 
-                modified_value_dict = {}
+            modified_value_dict = {}
 
-                for row_name in correlation_dict.keys():
-                    modified_value_dict[row_name] = {}
-                    for col_name in correlation_dict[row_name].keys():
-                        original_value = mi_scores[row_name][col_name]
-                        if correlation_dict[row_name][col_name] < 0:
-                            modified_value = -original_value
-                        else:
-                            modified_value = original_value
-                        modified_value_dict[row_name][col_name] = modified_value
-
-                self.mi_scores = modified_value_dict
+            for row_name in correlation_dict.keys():
+                modified_value_dict[row_name] = {}
+                for col_name in correlation_dict[row_name].keys():
+                    original_value = mi_scores[row_name][col_name]
+                    if correlation_dict[row_name][col_name] < 0:
+                        modified_value = -original_value
+                    else:
+                        modified_value = original_value
+                    modified_value_dict[row_name][col_name] = modified_value
+            self.correlation = correlation_dict
+            self.mi_scores = modified_value_dict
         
         print(bcolors.FAIL+"MI Loaded."+bcolors.ENDC)
 

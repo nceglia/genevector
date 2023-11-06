@@ -19,6 +19,7 @@ import collections
 import os   
 import pandas as pd
 import gc
+from scipy.stats import pearsonr
 
 class bcolors:
     HEADER = '\033[95m'
@@ -152,6 +153,9 @@ class GeneEmbedding(object):
             if gene in _labels:
                 ax.text(pos[0]+.04, pos[1], str(gene), fontsize=6, alpha=0.9, fontweight="bold")
         plt.tight_layout()
+
+    def get_vector(self, gene):
+        return self.embeddings[gene]
 
     def plot_metagenes_scores(self, adata, metagenes, column, plot=None):
         """
@@ -497,6 +501,20 @@ class CellEmbedding(object):
         self.uncorrected_matrix = self.matrix
         self.matrix = corrected_matrix
         return correction_vectors
+    
+    @staticmethod
+    def get_expression(adata, gene):
+        return adata.X[:,adata.var.index.tolist().index(gene)].T.todense().tolist()[0]
+
+    def compare_expression_to_similarity(self, adata, gene):
+        vec = self.embed.get_vector(gene)
+        adata.obs["{}+".format(gene)] = self.cell_distance(vec)
+        adata.obs["{}_exp".format(gene)] = self.get_expression(adata, gene)
+        fig, ax =plt.subplots(1,3,figsize=(10,3))
+        sc.pl.umap(adata,color=["{}_exp".format(gene)],s=30,ax=ax[0], show=False)
+        sc.pl.umap(adata,color="{}+".format(gene),s=30,ax=ax[1], show=False)
+        sns.scatterplot(data=adata.obs,x="{}+".format(gene),y='{}_exp'.format(gene),s=5,ax=ax[2])
+        fig.tight_layout()
 
     def get_predictive_genes(self, adata, label, n_genes=10):
         """
@@ -532,6 +550,65 @@ class CellEmbedding(object):
             ct_sig = self.embed.get_similar_genes(mvec)[:n_genes]["Gene"].tolist()
             markers[x] = ct_sig
         return markers
+
+    def compare_classification(self,adata,column1, column2):
+        df = adata.obs[[column1,column2]]
+        df=pd.crosstab(df[column1],df[column2],normalize='index')
+        return sns.heatmap(df)
+
+    def phenotype_qc(self, adata, phenotype, genes, norm=True):
+        probability = "{} Pseudo-probability".format(phenotype)
+        score_name =  "{} Module Score".format(phenotype)
+        similarity_name = "{} Similarity".format(phenotype)
+        vector = self.embed.generate_vector(genes)
+        adata.obs[similarity_name] = self.cell_distance(vector)
+        sc.tl.score_genes(adata,gene_list=genes,score_name=score_name)
+        df = adata.obs[[probability, score_name, similarity_name]]
+        df["Phenotype"] = phenotype
+        fig, ax =plt.subplots(1,3,figsize=(10,3))
+        sc.pl.umap(adata,color=score_name,s=30,ax=ax[0], show=False)
+        sc.pl.umap(adata,color=probability,s=30,ax=ax[1], show=False)
+        sc.pl.umap(adata,color=similarity_name,s=30,ax=ax[2], show=False)
+        sns.pairplot(df,size=3,hue="Phenotype",kind="scatter",plot_kws={"alpha":0.5,"s":2})
+        fig.tight_layout()
+        return df
+    
+    def module_score_r2(self, adata, markers):
+        values = []
+        phs = []
+        for phenotype, genes in markers.items():
+            score_name =  "{} Module Score".format(phenotype)
+            if score_name not in adata.obs.columns.tolist():
+                sc.tl.score_genes(adata,gene_list=genes,score_name=score_name)
+            r2 = pearsonr(adata.obs["{} Pseudo-probability".format(phenotype)],
+                        adata.obs["{} Module Score".format(phenotype)]).statistic
+            values.append(r2)
+            phs.append(phenotype)
+        df = pandas.DataFrame.from_dict({"Phenotype":phs, "r2":values})
+        fig, ax =plt.subplots(1,1,figsize=(7,4))
+        sns.stripplot(df,x="Phenotype",y ="r2",s=15,color="#999999",ax=ax)
+        ax.set_ylim(0,1)
+        ax.set_title("Probability vs Module Score (r2)")
+
+    def plot_probabilities(self,adata):
+        prob_cols = []
+        for x in adata.obs.columns:
+            if "Pseudo-probability" in x:
+                prob_cols.append(x)
+        sc.pl.umap(adata,color=prob_cols,s=30,ncols=3,cmap="magma",alpha=0.8)
+
+    def cell_distance(self, vec, norm=True):
+        if norm:
+            vec /= np.linalg.norm(vec)
+        mapped_components = dict(zip(list(self.data.keys()),self.matrix))
+        odists = []
+        for x in tqdm.tqdm(self.adata.obs.index):
+            cell_vec = mapped_components[x]
+            if norm:
+                cell_vec /= np.linalg.norm(cell_vec)
+            dist = 1. - distance.cosine(cell_vec, vec)
+            odists.append(dist)
+        return odists
 
     def get_inverse_predictive_genes(self, adata, label, n_genes=10):
         """

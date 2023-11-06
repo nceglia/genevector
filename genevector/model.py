@@ -100,7 +100,7 @@ class GeneVector(object):
         self.mean_loss_values = []
         self.rterm = regularization_term
 
-    def train(self, epochs, threshold=None, update_interval=20):
+    def train(self, epochs, threshold=None, update_interval=20, alpha=1.):
         """Constructor method
         """
         last_loss = 0.
@@ -112,7 +112,7 @@ class GeneVector(object):
                 outputs = self.model(i_idx, j_idx)
                 loss = self.loss(outputs, x_ij) + outputs.sum().abs()
                 if self.rterm:
-                    loss += outputs.sum().abs()
+                    loss += outputs.sum().abs() * alpha
                 loss.backward()
                 self.optimizer.step()
                 self.loss_values.append(loss.item())

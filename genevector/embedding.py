@@ -20,6 +20,9 @@ import os
 import pandas as pd
 import gc
 from scipy.stats import pearsonr
+import numpy as np
+import pandas as pd
+import seaborn as sns
 
 class bcolors:
     HEADER = '\033[95m'
@@ -722,7 +725,7 @@ class CellEmbedding(object):
         """
         if method == "softmax":
             print(bcolors.OKBLUE+"Using **SoftMax**"+bcolors.ENDC)
-            pfunc = self.softmax
+            pfunc = softmax
         elif method == "sparsemax":
             print(bcolors.OKBLUE+"Using **SparseMax**"+bcolors.ENDC)
             pfunc = self.entmax_15
@@ -746,17 +749,15 @@ class CellEmbedding(object):
             print(bcolors.OKGREEN+"Markers: {}".format(", ".join(markers))+bcolors.ENDC)
             vector = self.embed.generate_vector(markers)
             probs[pheno] = self.cell_distance(vector)
-        
         distribution = []
         celltypes = []
         for k, v in probs.items():
             distribution.append(v)
             celltypes.append(k)
-        
         distribution = list(zip(*distribution))
         probabilities = []
         for d in distribution:
-            p = pfunc(d)
+            p = pfunc(numpy.array(d))
             probabilities.append(p)
         
         res = {"distances":distribution, "order":celltypes, "probabilities":probabilities}
@@ -781,6 +782,12 @@ class CellEmbedding(object):
             return adata, res
         else:
             return adata
+
+    def cosine_sim_qc(self, dists):
+        ddf = pd.DataFrame(data = np.array(dist["distances"]),columns=dist['order'])
+        sns.pairplot(data=ddf,kind="reg",plot_kws={"scatter_kws":{"s":0.1}})
+        return ddf
+    
 
     def cluster(self, adata, up_markers, down_markers=dict()):
         """

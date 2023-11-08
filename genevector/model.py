@@ -28,8 +28,8 @@ class GeneVectorModel(nn.Module):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
         super(GeneVectorModel, self).__init__()
-        self.wi = nn.Embedding(num_embeddings, embedding_dim)
-        self.wj = nn.Embedding(num_embeddings, embedding_dim)
+        self.wi = nn.Embedding(num_embeddings, embedding_dim, max_norm=1., scale_grad_by_freq=True)
+        self.wj = nn.Embedding(num_embeddings, embedding_dim, max_norm=1., scale_grad_by_freq=True)
         self.wi.weight.data.uniform_(-1, 1.)
         self.wj.weight.data.uniform_(-1.,1.)
 
@@ -51,7 +51,7 @@ class GeneVectorModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, c=1., device="cpu", correlation_only=False, regularization_term=True):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, device="cpu", correlation_only=False, regularization_term=True):
         """
         GeneVector model for training a gene embedding.
 
@@ -72,6 +72,7 @@ class GeneVector(object):
         :param regularization_term: Only use correlation coefficients for training (used for comparisons in paper.)
         :type device: bool
         """
+        c = 1. #will deprecate this value
         self.dataset = dataset
         if correlation_only == False:
             self.dataset.create_inputs_outputs(c=c)
@@ -100,6 +101,13 @@ class GeneVector(object):
         self.mean_loss_values = []
         self.rterm = regularization_term
 
+    @staticmethod
+    def orthogonality_penalty(embedding_matrix):
+        gram_matrix = torch.matmul(embedding_matrix, embedding_matrix.t())
+        identity = torch.eye(gram_matrix.size(0)).to(embedding_matrix.device)
+        penalty = ((gram_matrix - identity) ** 2).sum()
+        return penalty
+
     def train(self, epochs, threshold=None, update_interval=20, alpha=1.):
         """Constructor method
         """
@@ -108,11 +116,13 @@ class GeneVector(object):
             batch_i = 0
             for x_ij, i_idx, j_idx in self.dataset.get_batches(self.batch_size):
                 batch_i += 1
-                self.optimizer.zero_grad()
                 outputs = self.model(i_idx, j_idx)
-                loss = self.loss(outputs, x_ij) + outputs.sum().abs()
-                if self.rterm:
-                    loss += outputs.sum().abs() * alpha
+                loss = self.loss(outputs, x_ij) 
+                ortho_penalty_wi = self.orthogonality_penalty(self.model.wi.weight)
+                ortho_penalty_wj = self.orthogonality_penalty(self.model.wj.weight)                
+                # Total loss is the sum of the primary loss and the orthogonality penalty
+                self.optimizer.zero_grad()
+                loss = loss + alpha * (ortho_penalty_wi + ortho_penalty_wj)
                 loss.backward()
                 self.optimizer.step()
                 self.loss_values.append(loss.item())

@@ -30,8 +30,8 @@ class GeneVectorModel(nn.Module):
         super(GeneVectorModel, self).__init__()
         self.wi = nn.Embedding(num_embeddings, embedding_dim, max_norm=1., scale_grad_by_freq=True)
         self.wj = nn.Embedding(num_embeddings, embedding_dim, max_norm=1., scale_grad_by_freq=True)
-        self.wi.weight.data.uniform_(-1, 1.)
-        self.wj.weight.data.uniform_(-1.,1.)
+        nn.init.orthogonal_(self.wi.weight, gain=100.)
+        nn.init.orthogonal_(self.wj.weight, gain=100.)
 
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)
@@ -120,7 +120,6 @@ class GeneVector(object):
                 loss = self.loss(outputs, x_ij) 
                 ortho_penalty_wi = self.orthogonality_penalty(self.model.wi.weight)
                 ortho_penalty_wj = self.orthogonality_penalty(self.model.wj.weight)                
-                # Total loss is the sum of the primary loss and the orthogonality penalty
                 self.optimizer.zero_grad()
                 loss = loss + alpha * (ortho_penalty_wi + ortho_penalty_wj)
                 loss.backward()

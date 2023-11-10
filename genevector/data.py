@@ -136,13 +136,11 @@ class GeneVectorDataset(Dataset):
     :type processes: int
     """
 
-    def __init__(self, adata, device="cpu", mi_scores=None, processes=1, apply_qc=False, entropy_threshold=1.,load_expression=True, signed_mi=True):
+    def __init__(self, adata, device="cpu", mi_scores=None, load_expression=True, signed_mi=True):
         """Constructor method
         """
         adata.var.index = [str(x).upper() for x in adata.var.index.tolist()]
         adata.X = sparse.csr_matrix(adata.X)
-        if apply_qc:
-            adata = self.quality_control(adata, entropy_threshold=entropy_threshold)
         self.adata = adata
         self.data = Context.build(adata, load_expression=load_expression)
         self._word2id = self.data.gene2id
@@ -150,7 +148,6 @@ class GeneVectorDataset(Dataset):
         self._vocab_len = len(self._word2id)
         self.device = device
         self.mi_scores = mi_scores
-        self.processes = processes
         self.signed_mi = signed_mi
 
     @staticmethod
@@ -315,6 +312,12 @@ class GeneVectorDataset(Dataset):
         print(bcolors.WARNING+"*****************"+bcolors.ENDC)
         print(bcolors.HEADER+"Loading Dataset."+bcolors.ENDC)
         print(bcolors.WARNING+"*****************\n"+bcolors.ENDC)
+
+        entropy = self.get_gene_entropy(self.adata)
+        ent = []
+        for g in self.data.genes:
+            ent.append(entropy[g])
+
         if self.mi_scores == None:
             self.generate_mi_scores()
         
@@ -356,6 +359,10 @@ class GeneVectorDataset(Dataset):
         self._i_idx = list()
         self._j_idx = list()
         self._xij = list()
+        self._ei = list()
+        for gene in names:
+            self._ei.append(entropy)
+
         pairs = list(itertools.combinations(names,2))
         self.num_pairs = len(pairs)
 
@@ -368,18 +375,19 @@ class GeneVectorDataset(Dataset):
             ci = self.data.gene2id[cgene]
             self._i_idx.append(wi)
             self._j_idx.append(ci)
-            mivalue = self.mi_scores[gene][cgene] * c
+            mivalue = round(self.mi_scores[gene][cgene],5)
             self._xij.append(mivalue)
 
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
             self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()
             self._xij = torch.cuda.FloatTensor(self._xij).cuda()
+            self._ent = torch.FloatTensor(ent).cuda()
         else:
-            self._i_idx = torch.LongTensor(self._i_idx).to("cpu")
-            self._j_idx = torch.LongTensor(self._j_idx).to("cpu")
-            self._xij = torch.FloatTensor(self._xij).to("cpu")
-
+            self._i_idx = torch.LongTensor(self._i_idx).to(self.device)
+            self._j_idx = torch.LongTensor(self._j_idx).to(self.device)
+            self._xij = torch.FloatTensor(self._xij).to(self.device)
+            self._ent = torch.FloatTensor(ent).to(self.device)
         print(bcolors.OKCYAN + "Ready to train." + bcolors.ENDC)
     
     def get_batches(self, batch_size):

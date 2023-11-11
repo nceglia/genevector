@@ -6,7 +6,6 @@ import numpy as np
 import numpy
 import matplotlib.pyplot as plt
 
-
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -18,15 +17,21 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
+def mse_loss(inputs, targets, device):
+    loss = F.mse_loss(inputs, targets, reduction='none')
+    if device == "cuda":
+        loss = loss.cuda()
+    return torch.mean(loss).to(device)
+
 class GeneVectorModel(nn.Module):
-    def __init__(self, num_embeddings, embedding_dim, gain=1.):
+    def __init__(self, num_embeddings, embedding_dim):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
         super(GeneVectorModel, self).__init__()
-        self.wi = nn.Embedding(num_embeddings, embedding_dim, max_norm=1.)
-        self.wj = nn.Embedding(num_embeddings, embedding_dim, max_norm=1.)
-        nn.init.orthogonal_(self.wi.weight, gain=100.)
-        nn.init.orthogonal_(self.wj.weight, gain=100.)
+        self.wi = nn.Embedding(num_embeddings, embedding_dim, max_norm=1., scale_grad_by_freq=True)
+        self.wj = nn.Embedding(num_embeddings, embedding_dim, max_norm=1., scale_grad_by_freq=True)
+        self.wi.weight.data.uniform_(-1, 1.)
+        self.wj.weight.data.uniform_(-1.,1.)
 
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)
@@ -46,7 +51,7 @@ class GeneVectorModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, device="cpu", gain=1.):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, device="cpu", correlation_only=False, regularization_term=True):
         """
         GeneVector model for training a gene embedding.
 
@@ -67,8 +72,12 @@ class GeneVector(object):
         :param regularization_term: Only use correlation coefficients for training (used for comparisons in paper.)
         :type device: bool
         """
+        c = 1. #will deprecate this value
         self.dataset = dataset
-        self.dataset.create_inputs_outputs()
+        if correlation_only == False:
+            self.dataset.create_inputs_outputs(c=c)
+        else:
+            self.dataset.generate_correlation(c=c)
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension
@@ -79,7 +88,7 @@ class GeneVector(object):
         else:
             self.batch_size = 1e6
         self.use_cuda = torch.cuda.is_available()
-        self.model = GeneVectorModel(self.emb_size, self.emb_dimension, gain=gain)
+        self.model = GeneVectorModel(self.emb_size, self.emb_dimension)
         self.device = device
         if self.device == "cuda" and not self.use_cuda:
             raise ValueError("CUDA requested but no GPU available.")
@@ -90,9 +99,16 @@ class GeneVector(object):
         self.epoch = 0
         self.loss_values = list()
         self.mean_loss_values = []
+        self.rterm = regularization_term
 
+    @staticmethod
+    def orthogonality_penalty(embedding_matrix):
+        gram_matrix = torch.matmul(embedding_matrix, embedding_matrix.t())
+        identity = torch.eye(gram_matrix.size(0)).to(embedding_matrix.device)
+        penalty = ((gram_matrix - identity) ** 2).sum()
+        return penalty
 
-    def train(self, epochs, threshold=None, update_interval=20, alpha=0.01, beta=0.01):
+    def train(self, epochs, threshold=None, update_interval=20, alpha=1.):
         """Constructor method
         """
         last_loss = 0.
@@ -100,28 +116,13 @@ class GeneVector(object):
             batch_i = 0
             for x_ij, i_idx, j_idx in self.dataset.get_batches(self.batch_size):
                 batch_i += 1
-
                 outputs = self.model(i_idx, j_idx)
                 loss = self.loss(outputs, x_ij) 
-
-                w1 = self.model.wi.weight
-                w2 = self.model.wj.weight
-                
-                #STEP2
-                wTw = torch.matmul(w1, w2.t())
-                wTw.fill_diagonal_(0)
-                t1 = (wTw ** 2).sum()
-                t1 = alpha * t1
-
-                # #STEP3
-                # wTw = torch.matmul(w1, w2.t())
-                # diag = torch.diag(wTw)
-                # t2 = (diag - self.dataset._ent)
-                # t2 = (t2 ** 2).sum()
-                # t2 = beta * t2
-
+                ortho_penalty_wi = self.orthogonality_penalty(self.model.wi.weight)
+                ortho_penalty_wj = self.orthogonality_penalty(self.model.wj.weight)                
+                # Total loss is the sum of the primary loss and the orthogonality penalty
                 self.optimizer.zero_grad()
-                loss = loss + t1 #+ t2
+                loss = loss + alpha * (ortho_penalty_wi + ortho_penalty_wj)
                 loss.backward()
                 self.optimizer.step()
                 self.loss_values.append(loss.item())
@@ -134,8 +135,6 @@ class GeneVector(object):
                     round(np.mean(self.loss_values[-30:]),5))
             if type(threshold) == float and abs(curr_loss - last_loss) < threshold:
                 print(bcolors.OKCYAN + "Training complete!" + bcolors.ENDC)
-                self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name, 0)
-                self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name.replace(".vec","2.vec"), 1)
                 return
             last_loss = curr_loss
             self.epoch += 1

@@ -113,15 +113,15 @@ class GeneVector(object):
                 t1 = (wTw ** 2).sum()
                 t1 = alpha * t1
 
-                #STEP3
-                wTw = torch.matmul(w1, w2.t())
-                diag = torch.diag(wTw)
-                t2 = (diag - self.dataset._ent)
-                t2 = (t2 ** 2).sum()
-                t2 = beta * t2
+                # #STEP3
+                # wTw = torch.matmul(w1, w2.t())
+                # diag = torch.diag(wTw)
+                # t2 = (diag - self.dataset._ent)
+                # t2 = (t2 ** 2).sum()
+                # t2 = beta * t2
 
                 self.optimizer.zero_grad()
-                loss = loss + t1 + t2
+                loss = loss + t1 #+ t2
                 loss.backward()
                 self.optimizer.step()
                 self.loss_values.append(loss.item())

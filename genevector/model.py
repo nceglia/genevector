@@ -46,7 +46,7 @@ class GeneVectorModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, device="cpu", gain=1.):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, gain=1, device="cpu", gain=1.):
         """
         GeneVector model for training a gene embedding.
 
@@ -93,7 +93,8 @@ class GeneVector(object):
 
 
     def train(self, epochs, threshold=None, update_interval=20, alpha=0.01, beta=0.01):
-        """Constructor method
+        """
+        Constructor method
         """
         last_loss = 0.
         for _ in range(1, epochs+1):

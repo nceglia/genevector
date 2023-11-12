@@ -739,7 +739,7 @@ class CellEmbedding(object):
         down_markers = dict()
         down_only = set(down_markers.keys()).difference(set(up_markers.keys()))
         up_and_down = set(down_markers.keys()).intersection(set(up_markers.keys()))
-        phs = set(up_markers.keys()).union(set(down_markers.keys()))
+        phs = list(set(up_markers.keys()).union(set(down_markers.keys())))
         for ph in up_only:
             genes = up_markers[ph]
             vec = self.embed.generate_vector(genes)

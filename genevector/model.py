@@ -23,10 +23,10 @@ class GeneVectorModel(nn.Module):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
         super(GeneVectorModel, self).__init__()
-        self.wi = nn.Embedding(num_embeddings, embedding_dim, max_norm=1.)
-        self.wj = nn.Embedding(num_embeddings, embedding_dim, max_norm=1.)
-        nn.init.orthogonal_(self.wi.weight, gain=100.)
-        nn.init.orthogonal_(self.wj.weight, gain=100.)
+        self.wi = nn.Embedding(num_embeddings, embedding_dim)
+        self.wj = nn.Embedding(num_embeddings, embedding_dim)
+        nn.init.orthogonal_(self.wi.weight, gain=gain)
+        nn.init.orthogonal_(self.wj.weight, gain=gain)
 
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)
@@ -46,7 +46,7 @@ class GeneVectorModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class GeneVector(object):
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, gain=1, device="cpu", gain=1.):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, gain=1, device="cpu"):
         """
         GeneVector model for training a gene embedding.
 

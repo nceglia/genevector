@@ -6,6 +6,7 @@ import numpy as np
 import numpy
 import matplotlib.pyplot as plt
 
+from embedding import GeneEmbedding
 
 class bcolors:
     HEADER = '\033[95m'
@@ -19,6 +20,23 @@ class bcolors:
     UNDERLINE = '\033[4m'
 
 class GeneVectorModel(nn.Module):
+    """
+    GeneVector PyTorch model.
+
+    :param dataset: num_embeddings.
+    :type dataset: GeneVector.dataset.GeneVectorDataset
+    :param output_file: Flat file to store gene embedding. Input weights and output weights stored in with "2" suffix.
+    :type output_file: str
+    :param emb_dimension: Number of hidden units and dimension of latent representation.
+    :type output_file: int
+    :param batch_size: Size to batch gene pairs, defaults to all gene pairs.
+    :type output_file: int or None (default).
+    :param gain: Scale factor of orthogonal weight initialization.
+    :type gain: int
+    :param device: Sets Torch device ("cpu", "cuda:0", "mps")
+    :type device: str
+    """
+
     def __init__(self, num_embeddings, embedding_dim, gain=1.):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
@@ -46,26 +64,25 @@ class GeneVectorModel(nn.Module):
                 f.write('%s %s\n' % (w, e))
 
 class GeneVector(object):
+    """
+    GeneVector framework for training a gene embedding.
+
+    :param dataset: GeneVector dataset.
+    :type dataset: GeneVector.dataset.GeneVectorDataset
+    :param output_file: Flat file to store gene embedding. Input weights and output weights stored in with "2" suffix.
+    :type output_file: str
+    :param emb_dimension: Number of hidden units and dimension of latent representation.
+    :type output_file: int
+    :param batch_size: Size to batch gene pairs, defaults to all gene pairs.
+    :type output_file: int or None (default).
+    :param gain: Scale factor of orthogonal weight initialization.
+    :type gain: int
+    :param device: Sets Torch device ("cpu", "cuda:0", "mps")
+    :type device: str
+    """
     def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, gain=1, device="cpu"):
         """
-        GeneVector model for training a gene embedding.
-
-        :param dataset: GeneVector dataset.
-        :type min_dist: GeneVector.dataset.GeneVectorDataset
-        :param output_file: Flat file to store gene embedding. Input weights and output weights stored in with "2" suffix.
-        :type output_file: str
-        :param emb_dimension: Number of hidden units and dimension of latent representation.
-        :type output_file: int
-        :param batch_size: Size to batch gene pairs, defaults to all gene pairs.
-        :type output_file: int or None (default).
-        :param c: Scale factor for loss.
-        :type c: int
-        :param device: Sets Torch device ("cpu", "cuda:0", "mips", etc)
-        :type device: str
-        :param correlation_only: Only use correlation coefficients for training (used for comparisons in paper.)
-        :type device: bool
-        :param regularization_term: Only use correlation coefficients for training (used for comparisons in paper.)
-        :type device: bool
+        Constructor method
         """
         self.dataset = dataset
         self.dataset.create_inputs_outputs()
@@ -94,7 +111,18 @@ class GeneVector(object):
 
     def train(self, epochs, threshold=None, update_interval=20, alpha=0.01, beta=0.01):
         """
-        Constructor method
+        Trains the model for the specified number of epochs or until the loss falls below the threshold.
+
+        :param epchs: Maximum number of epochs.
+        :type epochs: int
+        :param threshold: Stopping critera.
+        :type threshold: float
+        :param update_interval: Number of epochs between printing loss to stdout.
+        :type update_interval: int
+        :param alpha: Coefficient of orthogonality penalty.
+        :type alpha: float
+        :param beta: Coefficient of magnitude scaling.
+        :type beta: float
         """
         last_loss = 0.
         for _ in range(1, epochs+1):
@@ -137,6 +165,7 @@ class GeneVector(object):
                 print(bcolors.OKCYAN + "Training complete!" + bcolors.ENDC)
                 self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name, 0)
                 self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name.replace(".vec","2.vec"), 1)
+                GeneEmbedding.average_vector_results(embedding_file,secondary_weights,avg_embedding)
                 return
             last_loss = curr_loss
             self.epoch += 1

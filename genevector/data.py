@@ -314,39 +314,30 @@ class GeneVectorDataset(Dataset):
         print(bcolors.WARNING+"*****************\n"+bcolors.ENDC)
 
         entropy = self.get_gene_entropy(self.adata)
+
         ent = []
         for g in self.data.genes:
             ent.append(entropy[g])
 
         if self.mi_scores == None:
             self.generate_mi_scores()
-        
-        if self.signed_mi:
-            print("...Directional MI....")
-            correlation_matrix = numpy.corrcoef(self.adata.X.todense())
-            mi_scores = self.mi_scores
-            correlation_dict = {}
+            
+            if self.signed_mi:
+                print("...Directional MI....")
+                correlation_matrix = self.adata.to_df().corr()
+                self.correlation = correlation_matrix.to_dict()
 
-            names=self.adata.var.index.tolist()
-            for i, row_name in enumerate(names):
-                correlation_dict[row_name] = {}
-                for j, col_name in enumerate(names):
-                    correlation_dict[row_name][col_name] = correlation_matrix[i, j]
+                modified_value_dict = {}
 
-            modified_value_dict = {}
-
-            for row_name in correlation_dict.keys():
-                modified_value_dict[row_name] = {}
-                for col_name in correlation_dict[row_name].keys():
-                    original_value = mi_scores[row_name][col_name]
-                    if correlation_dict[row_name][col_name] < 0:
-                        modified_value = -original_value
-                    else:
-                        modified_value = original_value
-                    modified_value_dict[row_name][col_name] = modified_value
-            self.correlation = correlation_dict
-            self.mi_scores = modified_value_dict
-        
+                for row_name in self.correlation.keys():
+                    modified_value_dict[row_name] = {}
+                    for col_name in self.correlation[row_name].keys():
+                        original_value = self.mi_scores[row_name][col_name]
+                        modified = self.correlation[row_name][col_name] * original_value
+                        modified_value_dict[row_name][col_name] = round(modified,5)
+                # self.correlation = correlation_dict
+                self.mi_scores = modified_value_dict
+            
         print(bcolors.FAIL+"MI Loaded."+bcolors.ENDC)
 
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}

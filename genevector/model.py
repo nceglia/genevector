@@ -5,8 +5,7 @@ import torch.optim as optim
 import numpy as np
 import numpy
 import matplotlib.pyplot as plt
-
-from embedding import GeneEmbedding
+from .embedding import GeneEmbedding
 
 class bcolors:
     HEADER = '\033[95m'
@@ -37,14 +36,18 @@ class GeneVectorModel(nn.Module):
     :type device: str
     """
 
-    def __init__(self, num_embeddings, embedding_dim, gain=1.):
+    def __init__(self, num_embeddings, embedding_dim, gain=1., init_ortho=True):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
         super(GeneVectorModel, self).__init__()
         self.wi = nn.Embedding(num_embeddings, embedding_dim)
         self.wj = nn.Embedding(num_embeddings, embedding_dim)
-        nn.init.orthogonal_(self.wi.weight, gain=gain)
-        nn.init.orthogonal_(self.wj.weight, gain=gain)
+        if init_ortho:
+            nn.init.orthogonal_(self.wi.weight, gain=gain)
+            nn.init.orthogonal_(self.wj.weight, gain=gain)
+        else:
+            self.wi.weight.data.uniform_(-1*gain,gain)
+            self.wj.weight.data.uniform_(-1*gain,gain)
 
     def forward(self, i_indices, j_indices):
         w_i = self.wi(i_indices)
@@ -80,11 +83,12 @@ class GeneVector(object):
     :param device: Sets Torch device ("cpu", "cuda:0", "mps")
     :type device: str
     """
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, gain=1, device="cpu"):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, gain=1, device="cpu", init_ortho=True):
         """
         Constructor method
         """
         self.dataset = dataset
+        self.init_ortho = init_ortho
         self.dataset.create_inputs_outputs()
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
@@ -96,7 +100,7 @@ class GeneVector(object):
         else:
             self.batch_size = 1e6
         self.use_cuda = torch.cuda.is_available()
-        self.model = GeneVectorModel(self.emb_size, self.emb_dimension, gain=gain)
+        self.model = GeneVectorModel(self.emb_size, self.emb_dimension, gain=gain, init_ortho=init_ortho)
         self.device = device
         if self.device == "cuda" and not self.use_cuda:
             raise ValueError("CUDA requested but no GPU available.")
@@ -165,7 +169,7 @@ class GeneVector(object):
                 print(bcolors.OKCYAN + "Training complete!" + bcolors.ENDC)
                 self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name, 0)
                 self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name.replace(".vec","2.vec"), 1)
-                GeneEmbedding.average_vector_results(embedding_file,secondary_weights,avg_embedding)
+
                 return
             last_loss = curr_loss
             self.epoch += 1

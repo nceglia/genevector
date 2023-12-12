@@ -593,7 +593,7 @@ class CellEmbedding(object):
         ax.set_ylim(0,1)
         ax.set_title("Probability vs Module Score (r2)")
 
-    def plot_probabilities(self,adata,save=filename):
+    def plot_probabilities(self,adata,save="probs.pdf"):
         prob_cols = []
         for x in adata.obs.columns:
             if "Pseudo-probability" in x:

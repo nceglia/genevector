@@ -19,6 +19,10 @@ import collections
 import os   
 import pandas as pd
 import gc
+from scipy.stats import pearsonr
+import numpy as np
+import pandas as pd
+import seaborn as sns
 
 class bcolors:
     HEADER = '\033[95m'
@@ -152,6 +156,9 @@ class GeneEmbedding(object):
             if gene in _labels:
                 ax.text(pos[0]+.04, pos[1], str(gene), fontsize=6, alpha=0.9, fontweight="bold")
         plt.tight_layout()
+
+    def get_vector(self, gene):
+        return self.embeddings[gene]
 
     def plot_metagenes_scores(self, adata, metagenes, column, plot=None):
         """
@@ -497,6 +504,20 @@ class CellEmbedding(object):
         self.uncorrected_matrix = self.matrix
         self.matrix = corrected_matrix
         return correction_vectors
+    
+    @staticmethod
+    def get_expression(adata, gene):
+        return adata.X[:,adata.var.index.tolist().index(gene)].T.todense().tolist()[0]
+
+    def compare_expression_to_similarity(self, adata, gene):
+        vec = self.embed.get_vector(gene)
+        adata.obs["{}+".format(gene)] = self.cell_distance(vec)
+        adata.obs["{}_exp".format(gene)] = self.get_expression(adata, gene)
+        fig, ax =plt.subplots(1,3,figsize=(10,3))
+        sc.pl.umap(adata,color=["{}_exp".format(gene)],s=30,ax=ax[0], show=False)
+        sc.pl.umap(adata,color="{}+".format(gene),s=30,ax=ax[1], show=False)
+        sns.scatterplot(data=adata.obs,x="{}+".format(gene),y='{}_exp'.format(gene),s=5,ax=ax[2])
+        fig.tight_layout()
 
     def get_predictive_genes(self, adata, label, n_genes=10):
         """
@@ -532,6 +553,65 @@ class CellEmbedding(object):
             ct_sig = self.embed.get_similar_genes(mvec)[:n_genes]["Gene"].tolist()
             markers[x] = ct_sig
         return markers
+
+    def compare_classification(self,adata,column1, column2):
+        df = adata.obs[[column1,column2]]
+        df=pd.crosstab(df[column1],df[column2],normalize='index')
+        return sns.heatmap(df)
+
+    def phenotype_qc(self, adata, phenotype, genes, norm=True):
+        probability = "{} Pseudo-probability".format(phenotype)
+        score_name =  "{} Module Score".format(phenotype)
+        similarity_name = "{} Similarity".format(phenotype)
+        vector = self.embed.generate_vector(genes)
+        adata.obs[similarity_name] = self.cell_distance(vector)
+        sc.tl.score_genes(adata,gene_list=genes,score_name=score_name)
+        df = adata.obs[[probability, score_name, similarity_name]]
+        df["Phenotype"] = phenotype
+        fig, ax =plt.subplots(1,3,figsize=(10,3))
+        sc.pl.umap(adata,color=score_name,s=30,ax=ax[0], show=False)
+        sc.pl.umap(adata,color=probability,s=30,ax=ax[1], show=False)
+        sc.pl.umap(adata,color=similarity_name,s=30,ax=ax[2], show=False)
+        sns.pairplot(df,size=3,hue="Phenotype",kind="scatter",plot_kws={"alpha":0.5,"s":2})
+        fig.tight_layout()
+        return df
+    
+    def module_score_r2(self, adata, markers):
+        values = []
+        phs = []
+        for phenotype, genes in markers.items():
+            score_name =  "{} Module Score".format(phenotype)
+            if score_name not in adata.obs.columns.tolist():
+                sc.tl.score_genes(adata,gene_list=genes,score_name=score_name)
+            r2 = pearsonr(adata.obs["{} Pseudo-probability".format(phenotype)],
+                        adata.obs["{} Module Score".format(phenotype)]).statistic
+            values.append(r2)
+            phs.append(phenotype)
+        df = pandas.DataFrame.from_dict({"Phenotype":phs, "r2":values})
+        fig, ax =plt.subplots(1,1,figsize=(7,4))
+        sns.stripplot(df,x="Phenotype",y ="r2",s=15,color="#999999",ax=ax)
+        ax.set_ylim(0,1)
+        ax.set_title("Probability vs Module Score (r2)")
+
+    def plot_probabilities(self,adata,save="probs.pdf"):
+        prob_cols = []
+        for x in adata.obs.columns:
+            if "Pseudo-probability" in x:
+                prob_cols.append(x)
+        sc.pl.umap(adata,color=prob_cols,s=30,ncols=3,cmap="magma",alpha=0.8,save=save)
+
+    def cell_distance(self, vec, norm=True):
+        if norm:
+            vec /= np.linalg.norm(vec)
+        mapped_components = dict(zip(list(self.data.keys()),self.matrix))
+        odists = []
+        for x in tqdm.tqdm(self.adata.obs.index):
+            cell_vec = mapped_components[x]
+            if norm:
+                cell_vec /= np.linalg.norm(cell_vec)
+            dist = 1. - distance.cosine(cell_vec, vec)
+            odists.append(dist)
+        return odists
 
     def get_inverse_predictive_genes(self, adata, label, n_genes=10):
         """
@@ -577,7 +657,54 @@ class CellEmbedding(object):
                 normalized_expression[cells[i]][genes[j]] = value
         return normalized_expression
 
-    def phenotype_probability(self, adata, phenotype_markers, return_distances=False, expression_weighted=False, target_col="genevector"):
+    @staticmethod
+    def entmax_15(values):
+        """
+        Compute the 1.5-entmax of the input array.
+        
+        Parameters:
+        - values: A 1D numpy array of input values.
+        
+        Returns:
+        - A 1D numpy array with the 1.5-entmax probabilities.
+        """
+        # Sort values in descending order
+        sorted_values = np.sort(values)[::-1]
+        # Compute the cumulative sum of the sorted values raised to the power of 2
+        cumsum_sorted = np.cumsum(sorted_values**2)
+        # Compute the number of elements that will have non-zero probabilities
+        rho = np.where(sorted_values > (cumsum_sorted - 1) / np.arange(1, len(values) + 1))[0][-1]
+        # Compute the threshold theta
+        theta = (cumsum_sorted[rho] - 1) / (rho + 1)
+        # Apply the thresholding operation
+        probabilities = np.maximum(values - theta, 0)**2
+        # Normalize the probabilities
+        probabilities /= np.sum(probabilities)
+        return probabilities
+
+    @staticmethod
+    def normalized_exponential_vector(values, temperature=0.000001):
+        """
+        Apply the normalized exponential function to a 1D numpy array (vector).
+        This function will compute the normalized exponential for the input vector.
+        
+        Parameters:
+        - values: 1D array-like, input values for which to compute the normalized exponential.
+        - temperature: float, the temperature parameter to control the sharpness of the distribution.
+        
+        Returns:
+        - A 1D numpy array with the normalized exponential probabilities.
+        """
+        # Ensure temperature is positive to avoid division by zero
+        assert temperature > 0, "Temperature must be positive"
+
+        # Compute the exponentials, scaled by the temperature
+        exps = np.exp(values / temperature)
+
+        # Normalize the result to get probabilities that sum to one
+        return exps / np.sum(exps)
+
+    def phenotype_probability(self, adata, phenotype_markers, return_distances=False, method="sparsemax", target_col="genevector", temperature=0.05):
         """
         Probablistically assign phenotypes based on a set of cell type labels and associated markers. 
         Can optionally return the original cosine distances and perform the assignment based on expression weight gene vectors.
@@ -596,143 +723,71 @@ class CellEmbedding(object):
         :return: Anndata with cell type labels and probabilities, or optionally a tuple with the anndata and the raw cosine similarities.
         :rtype:  anndata.AnnData
         """
-        def normalized_marker_expression_sub(self, normalized_matrix, genes, cells, markers):
-            normalized_expression = collections.defaultdict(dict)
-            normalized_matrix.eliminate_zeros()
-            row_indices, column_indices = normalized_matrix.nonzero()
-            nonzero_values = normalized_matrix.data
-            entries = list(zip(nonzero_values, row_indices, column_indices))
-            for value, i, j in tqdm.tqdm(entries):
-                if value > 0 and genes[j].upper() in self.embed.embeddings and genes[j] in markers:
-                    normalized_expression[cells[i]][genes[j]] = value
-            return normalized_expression
+        if method == "softmax":
+            print(bcolors.OKBLUE+"Using **SoftMax**"+bcolors.ENDC)
+            pfunc = softmax
+        elif method == "sparsemax":
+            print(bcolors.OKBLUE+"Using **SparseMax**"+bcolors.ENDC)
+            pfunc = self.entmax_15
+        elif method == "normalized_exponential":
+            print(bcolors.OKBLUE+"Using Normalized Exponential (Temp: {})".format(temperature)+bcolors.ENDC)
+            pfunc = lambda x: self.normalized_exponential_vector(x, temperature)
+        for x in adata.obs.columns:
+            if "Pseudo-probability" in x:
+                del adata.obs[x]
+        mapped_components = dict(zip(list(self.data.keys()),self.matrix))
+        genes = adata.var.index.to_list()
+        cells = adata.obs.index.to_list()
+        all_markers = []
+        for _, markers in phenotype_markers.items():
+            all_markers += markers  
+        all_markers = list(set(all_markers))
+        probs = dict()
 
-        if expression_weighted:
-            for x in adata.obs.columns:
-                if "Pseudo-probability" in x:
-                    del adata.obs[x]
-            mapped_components = dict(zip(list(self.data.keys()),self.matrix))
-            genes = adata.var.index.to_list()
-            cells = adata.obs.index.to_list()
-            matrix = csr_matrix(adata.X)
-            embedding = csr_matrix(self.matrix)
-            all_markers = []
-            for _, markers in phenotype_markers.items():
-                all_markers += markers  
-            all_markers = list(set(all_markers))
-            normalized_expression = normalized_marker_expression_sub(self, matrix, genes, cells, all_markers)
-            probs = dict()
-
-            def generate_weighted_vector(embed, genes, weights):
-                vector = []
-                for gene, vec in zip(embed.genes, embed.vector):
-                    if gene in genes and gene in weights:
-                        vector.append(weights[gene] * numpy.array(vec))
-                if numpy.sum(vector) == 0:
-                    return None
-                else:
-                    return list(numpy.mean(vector, axis=0))
-            matrix = matrix.todense()
-
-            for pheno, markers in phenotype_markers.items():
-                dists = []
-                print(bcolors.OKBLUE+"Computing similarities for {}".format(pheno)+bcolors.ENDC)
-                print(bcolors.OKGREEN+"Markers: {}".format(", ".join(markers))+bcolors.ENDC)
-                odists = []
-                for x in tqdm.tqdm(adata.obs.index):
-                    weights = normalized_expression[x]
-                    vector = generate_weighted_vector(self.embed, markers, weights)
-                    if vector != None:
-                        dist = 1. - distance.cosine(mapped_components[x], numpy.array(vector))
-                        odists.append(dist)
-                    else:
-                        odists.append(0.)
-                probs[pheno] = odists
-            distribution = []
-            celltypes = []
-            for k, v in probs.items():
-                distribution.append(v)
-                celltypes.append(k)
-            distribution = list(zip(*distribution))
-            probabilities = softmax(numpy.array(distribution),axis=1)
-            res = {"distances":distribution, "order":celltypes, "probabilities":probabilities}
-            barcode_to_label = dict(zip(list(self.data.keys()), res["probabilities"]))
-            ct = []
-            probs = collections.defaultdict(list)
-            for x in adata.obs.index:
-                ctx = res["order"][numpy.argmax(barcode_to_label[x])]
-                ct.append(ctx)
-                for ph, pb in zip(res["order"],barcode_to_label[x]):
-                    probs[ph].append(pb)
-            adata.obs[target_col] = ct
-            def load_predictions(adata,probs):
-                for ph in probs.keys():
-                    adata.obs[ph+" Pseudo-probability"] = probs[ph]
-                return adata
-            adata = load_predictions(adata,probs)
-            prob_cols = [x for x in adata.obs.columns if "Pseudo" in x]
-            cts = adata.obs[target_col].tolist()
-            probs = adata.obs[prob_cols].to_numpy()
-            adj_cts = []
-            for ct,p in zip(cts,probs):
-                if len(set(p)) == 1:
-                    adj_cts.append("Unknown")
-                else:
-                    adj_cts.append(ct)
-            adata.obs[target_col] = adj_cts
-            if return_distances:
-                return adata, res
-            else:
-                return adata
+        for pheno, markers in phenotype_markers.items():
+            print(bcolors.OKBLUE+"Computing similarities for {}".format(pheno)+bcolors.ENDC)
+            print(bcolors.OKGREEN+"Markers: {}".format(", ".join(markers))+bcolors.ENDC)
+            vector = self.embed.generate_vector(markers)
+            probs[pheno] = self.cell_distance(vector)
+        distribution = []
+        celltypes = []
+        for k, v in probs.items():
+            distribution.append(v)
+            celltypes.append(k)
+        distribution = list(zip(*distribution))
+        probabilities = []
+        for d in distribution:
+            p = pfunc(numpy.array(d))
+            probabilities.append(p)
+        
+        res = {"distances":distribution, "order":celltypes, "probabilities":probabilities}
+        barcode_to_label = dict(zip(list(self.data.keys()), res["probabilities"]))
+        ct = []
+        probs = collections.defaultdict(list)
+        for x in adata.obs.index:
+            ctx = res["order"][numpy.argmax(barcode_to_label[x])]
+            ct.append(ctx)
+            for ph, pb in zip(res["order"],barcode_to_label[x]):
+                probs[ph].append(pb)
+        adata.obs[target_col] = ct
+        def load_predictions(adata,probs):
+            prob_cols = []
+            for ph in probs.keys():
+                prob_cols.append(ph+" Pseudo-probability")
+                adata.obs[ph+" Pseudo-probability"] = probs[ph]
+            adata.uns["probability_columns"] = prob_cols
+            return adata
+        adata = load_predictions(adata, probs)
+        if return_distances:
+            return adata, res
         else:
-            for x in adata.obs.columns:
-                if "Pseudo-probability" in x:
-                    del adata.obs[x]
-            mapped_components = dict(zip(list(self.data.keys()),self.matrix))
-            genes = adata.var.index.to_list()
-            cells = adata.obs.index.to_list()
-            matrix = csr_matrix(adata.X)
-            all_markers = []
-            for _, markers in phenotype_markers.items():
-                all_markers += markers  
-            all_markers = list(set(all_markers))
-            probs = dict()
+            return adata
 
-            for pheno, markers in phenotype_markers.items():
-                print(bcolors.OKBLUE+"Computing similarities for {}".format(pheno)+bcolors.ENDC)
-                print(bcolors.OKGREEN+"Markers: {}".format(", ".join(markers))+bcolors.ENDC)
-                odists = []
-                for x in tqdm.tqdm(adata.obs.index):
-                    vector = self.embed.generate_vector(markers)
-                    dist = 1. - distance.cosine(mapped_components[x], numpy.array(vector))
-                    odists.append(dist)
-                probs[pheno] = odists
-            distribution = []
-            celltypes = []
-            for k, v in probs.items():
-                distribution.append(v)
-                celltypes.append(k)
-            distribution = list(zip(*distribution))
-            probabilities = softmax(numpy.array(distribution),axis=1)
-            res = {"distances":distribution, "order":celltypes, "probabilities":probabilities}
-            barcode_to_label = dict(zip(list(self.data.keys()), res["probabilities"]))
-            ct = []
-            probs = collections.defaultdict(list)
-            for x in adata.obs.index:
-                ctx = res["order"][numpy.argmax(barcode_to_label[x])]
-                ct.append(ctx)
-                for ph, pb in zip(res["order"],barcode_to_label[x]):
-                    probs[ph].append(pb)
-            adata.obs[target_col] = ct
-            def load_predictions(adata,probs):
-                for ph in probs.keys():
-                    adata.obs[ph+" Pseudo-probability"] = probs[ph]
-                return adata
-            adata = load_predictions(adata,probs)
-            if return_distances:
-                return adata, res
-            else:
-                return adata
+    def cosine_sim_qc(self, dists):
+        ddf = pd.DataFrame(data = np.array(dist["distances"]),columns=dist['order'])
+        sns.pairplot(data=ddf,kind="reg",plot_kws={"scatter_kws":{"s":0.1}})
+        return ddf
+    
 
     def cluster(self, adata, up_markers, down_markers=dict()):
         """

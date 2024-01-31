@@ -593,12 +593,12 @@ class CellEmbedding(object):
         ax.set_ylim(0,1)
         ax.set_title("Probability vs Module Score (r2)")
 
-    def plot_probabilities(self,adata,save="probs.pdf"):
+    def plot_probabilities(self,adata,ncols=2,save="probs.pdf",palette="magma"):
         prob_cols = []
         for x in adata.obs.columns:
             if "Pseudo-probability" in x:
                 prob_cols.append(x)
-        sc.pl.umap(adata,color=prob_cols,s=30,ncols=3,cmap="magma",alpha=0.8,save=save)
+        sc.pl.umap(adata,color=prob_cols,s=30,ncols=ncols,cmap=palette,alpha=0.8,save=save)
 
     def cell_distance(self, vec, norm=True):
         if norm:

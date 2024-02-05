@@ -201,53 +201,110 @@ class GeneVectorDataset(Dataset):
 
     def generate_mi_scores(self):
         print(bcolors.OKGREEN + "Getting gene pairs combinations." + bcolors.ENDC)
-        if self.mi_scores == None:
-            mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
-        else:
-            mi_scores = self.mi_scores
-        bcs = dict()
-        maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=0).T.todense()).T.tolist()[0]))
-        vgenes = []
-        for gene, bc in self.data.data.items():
-            bcs[gene] = set(bc)
-            if maxs[gene.upper()] > 0:
-                vgenes.append(gene)
-        ipairs = list(itertools.combinations(vgenes, 2))
-        pairs = []
-        for p1,p2 in ipairs:
-            if p1 in mi_scores and p2 in mi_scores[p1]:
-                continue
-            if p2 in mi_scores and p1 in mi_scores[p2]:
-                continue
-            pairs.append((p1,p2))
-        counts = collections.defaultdict(lambda : collections.defaultdict(int))
+        mi_scores = self.mi_scores if self.mi_scores is not None else {}
+
+        maxs = {gene.upper(): val for gene, val in zip(self.data.adata.var.index, np.array(self.data.adata.X.max(axis=0).T.todense()).ravel())}
+        bcs = {gene: set(bc) for gene, bc in self.data.data.items()}
+        vgenes = [gene for gene in self.data.data if maxs[gene.upper()] > 0]
+
+        pairs = [(p1, p2) for p1, p2 in itertools.combinations(vgenes, 2) if not mi_scores.get(p1, {}).get(p2) and not mi_scores.get(p2, {}).get(p1)]
         self.num_pairs = len(pairs)
-        
+
+        counts = collections.defaultdict(lambda: collections.defaultdict(int))
         for c, p in self.data.expression.items():
-            for g,v in p.items():
+            for g, v in p.items():
                 counts[g][c] += int(v)
+
         print(bcolors.OKGREEN + "Computing MI for each pair." + bcolors.ENDC)
-        for p1,p2 in tqdm.tqdm(pairs):
+        if self.mi_scores:
+            print("Found {} valid MI scores.".format(len(self.mi_scores)))
+
+        for p1, p2 in tqdm.tqdm(pairs):
             common = bcs[p1].intersection(bcs[p2])
-            if len(common) ==0: continue
-            
-            c1 = counts[p1]
-            c2 = counts[p2]
-            x = [c1[bc] for bc in common]
-            y = [c2[bc] for bc in common]
-            
-            pxy, _, _ = numpy.histogram2d(x,y, density=True)
-            pxy = pxy / pxy.sum()
-            px = np.sum(pxy, axis=1)
-            px = px / px.sum()
-            py = np.sum(pxy, axis=0)
-            py = py / py.sum()
-            px_py = px[:, None] * py[None, :]
+            if not common:
+                continue
+
+            c1, c2 = counts[p1], counts[p2]
+            x, y = np.array([c1[bc] for bc in common]), np.array([c2[bc] for bc in common])
+
+            pxy, _, _ = np.histogram2d(x, y, density=True)
+            pxy /= pxy.sum()
+            px, py = pxy.sum(axis=1), pxy.sum(axis=0)
+            px /= px.sum()
+            py /= py.sum()
+            px_py = np.outer(px, py)
             nzs = pxy > 0
-            mi = np.sum(pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
-            mi_scores[p1][p2] = mi
-            mi_scores[p2][p1] = mi
+            mi = np.sum(pxy[nzs] * np.log2(pxy[nzs] / px_py[nzs]))
+            if p1 not in mi_scores:
+                mi_scores[p1] = {}
+            if p2 not in mi_scores:
+                mi_scores[p2] = {}
+            mi_scores[p1][p2] = mi_scores[p2][p1] = mi
+
         self.mi_scores = mi_scores
+
+    # def generate_mi_scores(self):
+    #     print(bcolors.OKGREEN + "Getting gene pairs combinations." + bcolors.ENDC)
+    #     if self.mi_scores == None:
+    #         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
+    #     else:
+    #         mi_scores = self.mi_scores
+    #     bcs = dict()
+    #     maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=0).T.todense()).T.tolist()[0]))
+    #     vgenes = []
+    #     for gene, bc in self.data.data.items():
+    #         bcs[gene] = set(bc)
+    #         if maxs[gene.upper()] > 0:
+    #             vgenes.append(gene)
+    #     ipairs = list(itertools.combinations(vgenes, 2))
+    #     pairs = []
+    #     for p1,p2 in ipairs:
+    #         if p1 in mi_scores and p2 in mi_scores[p1]:
+    #             continue
+    #         if p2 in mi_scores and p1 in mi_scores[p2]:
+    #             continue
+    #         pairs.append((p1,p2))
+    #     counts = collections.defaultdict(lambda : collections.defaultdict(int))
+    #     self.num_pairs = len(pairs)
+        
+    #     for c, p in self.data.expression.items():
+    #         for g,v in p.items():
+    #             counts[g][c] += int(v)
+    #     print(bcolors.OKGREEN + "Computing MI for each pair." + bcolors.ENDC)
+    #     if len(self.mi_scores) > 0:
+    #         print("Found {} valid MI scores.".format(len(self.mi_scores)))
+        
+    #     for p1,p2 in tqdm.tqdm(pairs):
+    #         if p1 not in mi_scores:
+    #             mi_scores[p1] = dict()
+    #             if p2 in mi_scores[p1]:
+    #                 mi_scores[p1][p2] = dict()
+    #         if p2 not in mi_scores:
+    #             mi_scores[p2] = dict()
+    #             if p2 not in mi_scores[p1]:
+    #                 mi_scores[p2][p1] = dict()
+
+    #         common = bcs[p1].intersection(bcs[p2])
+    #         if len(common) == 0: continue
+            
+    #         c1 = counts[p1]
+    #         c2 = counts[p2]
+    #         x = [c1[bc] for bc in common]
+    #         y = [c2[bc] for bc in common]
+            
+    #         pxy, _, _ = numpy.histogram2d(x,y, density=True)
+    #         pxy = pxy / pxy.sum()
+    #         px = np.sum(pxy, axis=1)
+    #         px = px / px.sum()
+    #         py = np.sum(pxy, axis=0)
+    #         py = py / py.sum()
+    #         px_py = px[:, None] * py[None, :]
+    #         nzs = pxy > 0
+    #         mi = np.sum(pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
+
+    #         mi_scores[p1][p2] = mi
+    #         mi_scores[p2][p1] = mi
+    #     self.mi_scores = mi_scores
 
     @staticmethod
     def mutual_info():
@@ -308,7 +365,7 @@ class GeneVectorDataset(Dataset):
             joint_dist[indA, indB] += 1
         return joint_dist
 
-    def create_inputs_outputs(self, c=1.):
+    def create_inputs_outputs(self, compute_mi = False):
         print(bcolors.WARNING+"*****************"+bcolors.ENDC)
         print(bcolors.HEADER+"Loading Dataset."+bcolors.ENDC)
         print(bcolors.WARNING+"*****************\n"+bcolors.ENDC)
@@ -319,7 +376,7 @@ class GeneVectorDataset(Dataset):
         for g in self.data.genes:
             ent.append(entropy[g])
 
-        if self.mi_scores == None:
+        if self.mi_scores == None or compute_mi:
             self.generate_mi_scores()
             
             if self.signed_mi:
@@ -329,13 +386,12 @@ class GeneVectorDataset(Dataset):
 
                 modified_value_dict = {}
 
-                for row_name in self.correlation.keys():
+                for row_name in self.mi_scores.keys():
                     modified_value_dict[row_name] = {}
-                    for col_name in self.correlation[row_name].keys():
+                    for col_name in self.mi_scores[row_name].keys():
                         original_value = self.mi_scores[row_name][col_name]
                         modified = self.correlation[row_name][col_name] * original_value
                         modified_value_dict[row_name][col_name] = round(modified,5)
-                # self.correlation = correlation_dict
                 self.mi_scores = modified_value_dict
             
         print(bcolors.FAIL+"MI Loaded."+bcolors.ENDC)

@@ -83,13 +83,13 @@ class GeneVector(object):
     :param device: Sets Torch device ("cpu", "cuda:0", "mps")
     :type device: str
     """
-    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, gain=1, device="cpu", init_ortho=True):
+    def __init__(self, dataset, output_file, emb_dimension=100, batch_size=None, gain=1, device="cpu", init_ortho=True, compute_mi=False):
         """
         Constructor method
         """
         self.dataset = dataset
         self.init_ortho = init_ortho
-        self.dataset.create_inputs_outputs()
+        self.dataset.create_inputs_outputs(compute_mi=compute_mi)
         self.output_file_name = output_file
         self.emb_size = len(self.dataset.data.gene2id)
         self.emb_dimension = emb_dimension

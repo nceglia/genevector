@@ -415,15 +415,17 @@ class GeneVectorDataset(Dataset):
 
         print(bcolors.OKGREEN + "Loading Batches for Training." + bcolors.ENDC)
     
-        for genes in tqdm.tqdm(pairs):
-            gene = genes[0]
-            cgene = genes[1]
-            wi = self.data.gene2id[gene]
-            ci = self.data.gene2id[cgene]
-            self._i_idx.append(wi)
-            self._j_idx.append(ci)
-            mivalue = round(self.mi_scores[gene][cgene],5)
-            self._xij.append(mivalue)
+        for gene in names:
+            for cgene in names:
+                wi = self.data.gene2id[gene]
+                ci = self.data.gene2id[cgene]
+                self._i_idx.append(wi)
+                self._j_idx.append(ci)
+                if cgene in dataset.mi_scores[gene]:
+                    mivalue = round(self.mi_scores[gene][cgene],5)
+                else:
+                    mivalue =0.
+                self._xij.append(mivalue)
 
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()

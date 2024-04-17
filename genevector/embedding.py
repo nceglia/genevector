@@ -48,7 +48,7 @@ class GeneEmbedding(object):
     :type vector: str
     """
 
-    def __init__(self, embedding_file, dataset, vector="average"):
+    def __init__(self, embedding_file, dataset = None, vector="average"):
         """Constructor method
         """
         if vector not in ("1","2","average"):
@@ -67,6 +67,8 @@ class GeneEmbedding(object):
             secondary_weights = embedding_file.replace(".vec","2.vec")
             self.embeddings = self.read_embedding(secondary_weights)
         self.vector = []
+        if dataset is not None:
+            self.context = dataset.data
         self.context = dataset.data
         self.embedding_file = embedding_file
         self.vector = []

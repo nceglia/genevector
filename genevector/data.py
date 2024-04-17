@@ -362,6 +362,8 @@ class GeneVectorDataset(Dataset):
         print(bcolors.OKGREEN + "Loading Batches for Training." + bcolors.ENDC)
     
         for gene in names:
+            if gene not in self.mi_scores:
+                self.mi_scores[gene] = dict()
             for cgene in names:
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]

@@ -23,6 +23,7 @@ from scipy.stats import pearsonr
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from sklearn import preprocessing
 
 class bcolors:
     HEADER = '\033[95m'
@@ -756,7 +757,10 @@ class CellEmbedding(object):
         for k, v in probs.items():
             distribution.append(v)
             celltypes.append(k)
+        distribution = np.array(distribution)
+        distribution = preprocessing.normalize(distribution)
         distribution = list(zip(*distribution))
+
         probabilities = []
         for d in distribution:
             p = pfunc(numpy.array(d))

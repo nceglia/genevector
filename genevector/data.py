@@ -12,6 +12,7 @@ import collections
 from scipy.stats import entropy
 from sklearn import feature_extraction
 import pandas
+from fast_histogram import histogram2d
 
 class bcolors:
     HEADER = '\033[95m'
@@ -198,40 +199,29 @@ class GeneVectorDataset(Dataset):
         :type targets: dict
         """
         self.mi_scores = targets
-
+    
     def generate_mi_scores(self):
+        
         print(bcolors.OKGREEN + "Getting gene pairs combinations." + bcolors.ENDC)
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
-        maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=0).T.todense()).T.tolist()[0]))
+        maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=1).T.todense())[0]))
         vgenes = []
         for gene, bc in self.data.data.items():
             bcs[gene] = set(bc)
-            if maxs[gene.upper()] > 0:
+            if maxs[gene.upper()] > 1:
                 vgenes.append(gene)
-        ipairs = list(itertools.combinations(vgenes, 2))
-        pairs = []
-        for p1,p2 in ipairs:
-            if p1 in mi_scores and p2 in mi_scores[p1]:
-                continue
-            if p2 in mi_scores and p1 in mi_scores[p2]:
-                continue
-            pairs.append((p1,p2))
+        pairs = list(itertools.combinations(vgenes, 2))
         counts = collections.defaultdict(lambda : collections.defaultdict(int))
         self.num_pairs = len(pairs)
+        
         for c, p in self.data.expression.items():
             for g,v in p.items():
                 counts[g][c] += int(v)
         print(bcolors.OKGREEN + "Computing MI for each pair." + bcolors.ENDC)
         for p1,p2 in tqdm.tqdm(pairs):
-            if p1 not in mi_scores:
-                mi_scores[p1] = dict()
-
-            if p2 not in mi_scores:
-                mi_scores[p2] = dict()
-
             common = bcs[p1].intersection(bcs[p2])
-            if len(common) == 0: continue
+            if len(common) ==0: continue
             
             c1 = counts[p1]
             c2 = counts[p2]
@@ -247,7 +237,6 @@ class GeneVectorDataset(Dataset):
             px_py = px[:, None] * py[None, :]
             nzs = pxy > 0
             mi = np.sum(pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
-
             mi_scores[p1][p2] = mi
             mi_scores[p2][p1] = mi
         self.mi_scores = mi_scores
@@ -311,7 +300,7 @@ class GeneVectorDataset(Dataset):
             joint_dist[indA, indB] += 1
         return joint_dist
 
-    def create_inputs_outputs(self, compute_mi = False):
+    def create_inputs_outputs(self, c=100.):
         print(bcolors.WARNING+"*****************"+bcolors.ENDC)
         print(bcolors.HEADER+"Loading Dataset."+bcolors.ENDC)
         print(bcolors.WARNING+"*****************\n"+bcolors.ENDC)
@@ -337,8 +326,7 @@ class GeneVectorDataset(Dataset):
                     for col_name in self.mi_scores[row_name].keys():
                         original_value = self.mi_scores[row_name][col_name]
                         modified = self.correlation[row_name][col_name] * original_value
-                        modified_value_dict[row_name][col_name] = round(modified,5)
-                self.mi_scores = modified_value_dict
+                        self.mi_scores[row_name][col_name] = round(modified,5)
             
         print(bcolors.FAIL+"MI Loaded."+bcolors.ENDC)
 
@@ -361,19 +349,18 @@ class GeneVectorDataset(Dataset):
 
         print(bcolors.OKGREEN + "Loading Batches for Training." + bcolors.ENDC)
     
-        for gene in names:
-            if gene not in self.mi_scores:
-                self.mi_scores[gene] = dict()
-            for cgene in names:
+        for gene in tqdm.tqdm(self.data.genes):
+            for cgene in self.data.genes:
+                if gene == cgene: continue
                 wi = self.data.gene2id[gene]
                 ci = self.data.gene2id[cgene]
                 self._i_idx.append(wi)
                 self._j_idx.append(ci)
-                if cgene in self.mi_scores[gene]:
-                    mivalue = round(self.mi_scores[gene][cgene],5)
+                value = self.mi_scores[gene][cgene] * c**2
+                if value > 0 or self.signed_mi:
+                    self._xij.append(value)
                 else:
-                    mivalue =0.
-                self._xij.append(mivalue)
+                    self._xij.append(0.)
 
         if self.device == "cuda":
             self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()

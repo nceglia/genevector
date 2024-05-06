@@ -707,7 +707,7 @@ class CellEmbedding(object):
         # Normalize the result to get probabilities that sum to one
         return exps / np.sum(exps)
 
-    def phenotype_probability(self, adata, phenotype_markers, return_distances=False, method="sparsemax", target_col="genevector", temperature=0.05):
+    def phenotype_probability(self, adata, phenotype_markers, return_distances=False, method="sparsemax", target_col="genevector", temperature=0.05, normalize=True):
         """
         Probablistically assign phenotypes based on a set of cell type labels and associated markers. 
         Can optionally return the original cosine distances and perform the assignment based on expression weight gene vectors.
@@ -751,16 +751,16 @@ class CellEmbedding(object):
             print(bcolors.OKBLUE+"Computing similarities for {}".format(pheno)+bcolors.ENDC)
             print(bcolors.OKGREEN+"Markers: {}".format(", ".join(markers))+bcolors.ENDC)
             vector = self.embed.generate_vector(markers)
-            probs[pheno] = self.cell_distance(vector)
+            probs[pheno] = cell_distance(self, vector,norm=False)
         distribution = []
         celltypes = []
         for k, v in probs.items():
             distribution.append(v)
             celltypes.append(k)
         distribution = np.array(distribution)
+        #scaler = preprocessing.MinMaxScaler()
         distribution = preprocessing.normalize(distribution)
         distribution = list(zip(*distribution))
-
         probabilities = []
         for d in distribution:
             p = pfunc(numpy.array(d))
@@ -788,6 +788,7 @@ class CellEmbedding(object):
             return adata, res
         else:
             return adata
+
 
     def cosine_sim_qc(self, dists):
         ddf = pd.DataFrame(data = np.array(dist["distances"]),columns=dist['order'])

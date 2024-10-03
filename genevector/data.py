@@ -205,12 +205,10 @@ class GeneVectorDataset(Dataset):
         print(bcolors.OKGREEN + "Getting gene pairs combinations." + bcolors.ENDC)
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
-        maxs = dict(zip([x.upper() for x in self.data.adata.var.index.tolist()],numpy.array(self.data.adata.X.max(axis=1).T.todense())[0]))
         vgenes = []
         for gene, bc in self.data.data.items():
             bcs[gene] = set(bc)
-            if maxs[gene.upper()] > 1:
-                vgenes.append(gene)
+            vgenes.append(gene)
         pairs = list(itertools.combinations(vgenes, 2))
         counts = collections.defaultdict(lambda : collections.defaultdict(int))
         self.num_pairs = len(pairs)

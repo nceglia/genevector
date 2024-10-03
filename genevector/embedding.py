@@ -707,6 +707,16 @@ class CellEmbedding(object):
         # Normalize the result to get probabilities that sum to one
         return exps / np.sum(exps)
 
+    def cell_distance(self, vec, norm=True):
+        mapped_components = dict(zip(list(self.data.keys()),self.matrix))
+        odists = []
+        for x in tqdm.tqdm(self.adata.obs.index):
+            cell_vec = mapped_components[x]
+            dist = 1. - distance.cosine(cell_vec, vec)
+            odists.append(dist)
+        return odists
+
+
     def phenotype_probability(self, adata, phenotype_markers, return_distances=False, method="sparsemax", target_col="genevector", temperature=0.05, normalize=True):
         """
         Probablistically assign phenotypes based on a set of cell type labels and associated markers. 
@@ -751,14 +761,13 @@ class CellEmbedding(object):
             print(bcolors.OKBLUE+"Computing similarities for {}".format(pheno)+bcolors.ENDC)
             print(bcolors.OKGREEN+"Markers: {}".format(", ".join(markers))+bcolors.ENDC)
             vector = self.embed.generate_vector(markers)
-            probs[pheno] = cell_distance(self, vector,norm=False)
+            probs[pheno] = self.cell_distance(vector,norm=False)
         distribution = []
         celltypes = []
         for k, v in probs.items():
             distribution.append(v)
             celltypes.append(k)
         distribution = np.array(distribution)
-        #scaler = preprocessing.MinMaxScaler()
         distribution = preprocessing.normalize(distribution)
         distribution = list(zip(*distribution))
         probabilities = []

@@ -707,17 +707,21 @@ class CellEmbedding(object):
         # Normalize the result to get probabilities that sum to one
         return exps / np.sum(exps)
 
-    def cell_distance(self, vec, norm=True):
+
+    def cell_distance(self, vec, norm=False):
+        if norm:
+            vec /= np.linalg.norm(vec)
         mapped_components = dict(zip(list(self.data.keys()),self.matrix))
         odists = []
         for x in tqdm.tqdm(self.adata.obs.index):
             cell_vec = mapped_components[x]
+            if norm:
+                cell_vec /= np.linalg.norm(cell_vec)
             dist = 1. - distance.cosine(cell_vec, vec)
             odists.append(dist)
         return odists
 
-
-    def phenotype_probability(self, adata, phenotype_markers, return_distances=False, method="sparsemax", target_col="genevector", temperature=0.05, normalize=True):
+    def phenotype_probability(self, adata, phenotype_markers, return_distances=False, method="normalized_exponential", target_col="genevector", temperature=0.001):
         """
         Probablistically assign phenotypes based on a set of cell type labels and associated markers. 
         Can optionally return the original cosine distances and perform the assignment based on expression weight gene vectors.

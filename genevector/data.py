@@ -6,13 +6,11 @@ from scipy import sparse
 import itertools
 import pickle
 import os
-from multiprocessing import Pool
 import tqdm
 import collections
 from scipy.stats import entropy
 from sklearn import feature_extraction
 import pandas
-from fast_histogram import histogram2d
 
 class bcolors:
     HEADER = '\033[95m'

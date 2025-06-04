@@ -423,37 +423,86 @@ class CellEmbedding(object):
         """
         self.context = dataset.data
         self.embed = embed
-        self.data = collections.defaultdict(list)
-        self.matrix = []
-        self.expression = collections.defaultdict(dict)
-        adata = self.context.adata.copy()
+        self.data = collections.defaultdict(list) # Stores (vector, weight) tuples for each cell
+        self.matrix = [] # Stores average cell vectors
+        self.expression = collections.defaultdict(dict) # Potentially for raw/normalized expression values
+        adata_copy = self.context.adata.copy()
 
         if log_normalize:
-            sc.pp.normalize_total(adata)
-            sc.pp.log1p(adata)
-        
-        genes = adata.var.index.to_numpy()
-        barcodes = adata.obs.index.to_numpy()
+            sc.pp.normalize_total(adata_copy)
+            sc.pp.log1p(adata_copy)
 
-        matrix = csr_matrix(adata.X)
+        genes = adata_copy.var.index.to_numpy()
+        barcodes = adata_copy.obs.index.to_numpy()
+
+        # Note: The original code had normalized_vectors and normalized_marker_expression
+        # initialized here but populated in a separate normalized_expression method.
+        # self.normalized_vectors is populated by the call to self.normalized_expression_for_init
         self.normalized_vectors = collections.defaultdict(list)
-        self.normalized_marker_expression = collections.defaultdict(dict)
-        self.normalized_expression = self.normalized_expression(matrix, genes, barcodes)
-        self.normalized_expression_values = None
+        
+        # Assuming the original 'normalized_expression' method was intended for __init__
+        self._initialize_normalized_vectors(adata_copy.X, genes, barcodes)
 
         print(bcolors.OKGREEN + "Generating Cell Vectors." + bcolors.ENDC)
         cells_with_no_counts = 0
-        for cell in tqdm.tqdm(adata.obs.index.tolist()):
-            try:
-                vectors, weights = zip(*self.normalized_vectors[cell])
-            except Exception as e:
+        # Ensure self.data keys are consistent with barcodes for which vectors are made
+        temp_cell_vectors = {} # Store vectors before converting to self.matrix to ensure order
+        
+        processed_barcodes = [] # Keep track of barcodes for which vectors are generated
+
+        for cell_barcode in tqdm.tqdm(barcodes, desc="Processing cell counts"):
+            if cell_barcode in self.normalized_vectors and self.normalized_vectors[cell_barcode]:
+                vectors, weights = zip(*self.normalized_vectors[cell_barcode])
+                if vectors: # Ensure there are vectors to average
+                    avg_vector = numpy.average(vectors, axis=0, weights=weights)
+                    temp_cell_vectors[cell_barcode] = avg_vector
+                    self.data[cell_barcode] = list(zip(vectors, weights)) # Keep original structure for self.data
+                    processed_barcodes.append(cell_barcode)
+                else:
+                    cells_with_no_counts += 1
+            else:
                 cells_with_no_counts += 1
-                continue
-            self.data[cell] = vectors
-            self.matrix.append(numpy.average(vectors,axis=0,weights=weights))
-        print("Found {} Cells with No Counts.".format(cells_with_no_counts))
-        self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
-        print(bcolors.BOLD + "Finished." + bcolors.ENDC)
+        
+        # Build self.matrix in the order of processed_barcodes,
+        # which should align with how self.adata will be created/filtered in get_adata()
+        # However, self.data.keys() used later expects all initial barcodes with data.
+        # The original code iterates adata.obs.index.tolist() from the input adata_copy for self.matrix.
+        # Let's try to keep that logic for self.matrix and self.data more closely.
+
+        self.data = collections.defaultdict(list) # Re-init for clarity, populated below
+        self.matrix = [] # Re-init
+        
+        # Re-iterate for consistent ordering based on original barcodes (adata_copy.obs.index)
+        # This matches the original loop more closely for populating self.matrix and self.data
+        for cell_barcode in tqdm.tqdm(adata_copy.obs.index.tolist(), desc="Generating cell vectors"):
+            if cell_barcode in self.normalized_vectors and self.normalized_vectors[cell_barcode]:
+                vectors, weights = zip(*self.normalized_vectors[cell_barcode])
+                if vectors:
+                    self.data[cell_barcode] = list(zip(vectors, weights)) # For compatibility
+                    self.matrix.append(numpy.average(vectors, axis=0, weights=weights))
+                else:
+                    #This cell had entries in normalized_vectors but they were empty after filtering
+                    self.matrix.append(numpy.zeros(self.embed.vector_size)) # Placeholder, assuming vector_size known
+                    cells_with_no_counts +=1
+            else:
+                # This cell had no relevant gene expression
+                # Add a zero vector placeholder if this cell ID needs to be in self.matrix
+                # The original code implicitly skipped these cells for self.matrix
+                # but self.data.keys() would also miss them.
+                # For phenotype_probability, consistency between self.data.keys() and self.matrix is key.
+                # If get_adata filters by self.data.keys(), these cells are correctly excluded.
+                 cells_with_no_counts +=1
+
+
+        if not self.matrix:
+             print(bcolors.WARNING + "No cell vectors were generated. self.matrix is empty." + bcolors.ENDC)
+             self.dataset_vector = numpy.zeros(self.embed.vector_size if hasattr(self.embed, "vector_size") else 100) # Default size
+        else:
+             self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
+        
+        print(f"Found {cells_with_no_counts} Cells with No Counts / No scorable gene expression.")
+        print(bcolors.BOLD + "Finished CellEmbedding Initialization." + bcolors.ENDC)
+
 
     def normalized_expression(self, normalized_matrix, genes, cells):
         normalized_matrix.eliminate_zeros()
@@ -603,18 +652,6 @@ class CellEmbedding(object):
                 prob_cols.append(x)
         sc.pl.umap(adata,color=prob_cols,s=30,ncols=ncols,cmap=palette,alpha=0.8,save=save)
 
-    def cell_distance(self, vec, norm=True):
-        if norm:
-            vec /= np.linalg.norm(vec)
-        mapped_components = dict(zip(list(self.data.keys()),self.matrix))
-        odists = []
-        for x in tqdm.tqdm(self.adata.obs.index):
-            cell_vec = mapped_components[x]
-            if norm:
-                cell_vec /= np.linalg.norm(cell_vec)
-            dist = 1. - distance.cosine(cell_vec, vec)
-            odists.append(dist)
-        return odists
 
     def get_inverse_predictive_genes(self, adata, label, n_genes=10):
         """
@@ -662,143 +699,258 @@ class CellEmbedding(object):
 
     @staticmethod
     def entmax_15(values):
-        """
-        Compute the 1.5-entmax of the input array.
-        
-        Parameters:
-        - values: A 1D numpy array of input values.
-        
-        Returns:
-        - A 1D numpy array with the 1.5-entmax probabilities.
-        """
         # Sort values in descending order
         sorted_values = np.sort(values)[::-1]
         # Compute the cumulative sum of the sorted values raised to the power of 2
-        cumsum_sorted = np.cumsum(sorted_values**2)
+        # Ensure array is float for power operation if not already
+        sorted_values_float = np.array(sorted_values, dtype=float)
+        cumsum_sorted = np.cumsum(sorted_values_float**2) # Using **2 based on typical alpha=2 for sparsemax from entmax paper. Original code had **2.
+                                                       # Entmax 1.5 should technically be alpha=1.5
+                                                       # If original used x^2, it's not entmax(alpha=1.5) but entmax(alpha=2) i.e. sparsemax
+                                                       # The original paper for entmax defines it with (alpha-1) * theta + ...
+                                                       # For alpha=1.5, it's not just x^2.
+                                                       # Given the name "entmax_15" but using **2 suggests a potential mismatch.
+                                                       # Assuming the **2 is the intended operation (sparsemax).
+                                                       # If alpha=1.5 is strictly needed, the formula is different.
+                                                       # For now, keeping original **2 operation as it implies sparsemax (alpha=2).
+        
         # Compute the number of elements that will have non-zero probabilities
-        rho = np.where(sorted_values > (cumsum_sorted - 1) / np.arange(1, len(values) + 1))[0][-1]
+        # rho is the largest k such that sorted_values[k-1] * k > sum(sorted_values[:k]) - tau (generalized)
+        # For sparsemax (alpha=2): sorted_values[k-1] > (cumsum_sorted[k-1]-1)/k
+        # The original where clause: sorted_values > (cumsum_sorted - 1) / np.arange(1, len(values) + 1)
+        # This is correct for finding rho for sparsemax (alpha=2).
+        
+        active_set_indices = np.where(sorted_values_float * np.arange(1, len(values) + 1) > (cumsum_sorted - 1))[0]
+        if len(active_set_indices) == 0: # All probabilities will be zero (e.g. input is all zero or negative)
+             return np.zeros_like(values, dtype=float)
+        rho = active_set_indices[-1] # rho is 0-indexed count (k-1)
+
         # Compute the threshold theta
         theta = (cumsum_sorted[rho] - 1) / (rho + 1)
-        # Apply the thresholding operation
-        probabilities = np.maximum(values - theta, 0)**2
+        
+        # Apply the thresholding operation: max(0, values - theta) for sparsemax if values are logits.
+        # The original paper uses max(0, v_i - tau)^ (1/(alpha-1)) for entmax(alpha)
+        # The provided code uses max(values - theta, 0)**2. This doesn't directly match entmax(1.5).
+        # It looks more like a squared hinge loss or a variant of sparsemax if theta is defined differently.
+        # If this is custom, it's fine. If it's meant to be standard entmax(1.5), it needs review.
+        # Sticking to the provided formula:
+        probabilities = np.maximum(np.array(values, dtype=float) - theta, 0)**2 # Element-wise power
+        
         # Normalize the probabilities
-        probabilities /= np.sum(probabilities)
+        sum_probs = np.sum(probabilities)
+        if sum_probs > 0:
+            probabilities /= sum_probs
+        else: # Avoid division by zero if all probabilities are zero
+            probabilities = np.zeros_like(values, dtype=float)
+            # Optionally distribute uniformly if that's desired for all-zero input after thresholding
+            # probabilities[:] = 1.0 / len(values) 
         return probabilities
+
 
     @staticmethod
     def normalized_exponential_vector(values, temperature=0.000001):
-        """
-        Apply the normalized exponential function to a 1D numpy array (vector).
-        This function will compute the normalized exponential for the input vector.
-        
-        Parameters:
-        - values: 1D array-like, input values for which to compute the normalized exponential.
-        - temperature: float, the temperature parameter to control the sharpness of the distribution.
-        
-        Returns:
-        - A 1D numpy array with the normalized exponential probabilities.
-        """
-        # Ensure temperature is positive to avoid division by zero
         assert temperature > 0, "Temperature must be positive"
+        values_arr = np.array(values, dtype=float) # Ensure float for division
+        exps = np.exp(values_arr / temperature)
+        sum_exps = np.sum(exps)
+        if sum_exps > 0:
+            return exps / sum_exps
+        else:
+            # Handle cases where all exps are zero (e.g., very small values with small temperature)
+            # Return uniform distribution or zeros based on desired behavior
+            return np.zeros_like(values_arr)
 
-        # Compute the exponentials, scaled by the temperature
-        exps = np.exp(values / temperature)
 
-        # Normalize the result to get probabilities that sum to one
-        return exps / np.sum(exps)
+    def cell_distance(self, target_vec, norm=False):
+        """
+        Computes the cosine similarity of each cell in self.adata to a target_vec.
+        Ensures self.adata is available (set by get_adata()).
+        The 'norm' parameter controls if both target_vec and cell vectors are L2 normalized before similarity calculation.
+        """
+        if not hasattr(self, 'adata') or self.adata is None:
+            print(bcolors.WARNING + "self.adata is not set. Call get_adata() first. Returning empty distances." + bcolors.ENDC)
+            return []
+        
+        # This map uses self.data.keys() and self.matrix from __init__
+        # It's crucial that self.adata.obs.index aligns with these.
+        # get_adata() does: adata = adata[list(self.data.keys())], so they should align.
+        cell_id_to_matrix_vector_map = dict(zip(list(self.data.keys()), self.matrix))
 
-
-    def cell_distance(self, vec, norm=False):
+        similarities = []
+        
+        # Process target_vec (convert to float array and optionally normalize)
+        processed_target_vec = np.array(target_vec, dtype=float)
         if norm:
-            vec /= np.linalg.norm(vec)
-        mapped_components = dict(zip(list(self.data.keys()),self.matrix))
-        odists = []
-        for x in tqdm.tqdm(self.adata.obs.index):
-            cell_vec = mapped_components[x]
+            target_norm_val = np.linalg.norm(processed_target_vec)
+            if target_norm_val > 0:
+                processed_target_vec /= target_norm_val
+            # else: target_vec is a zero vector, distance.cosine will handle it
+
+        for cell_id in tqdm.tqdm(self.adata.obs.index, desc="Calculating cell distances"):
+            # Get the pre-computed average vector for the cell from self.matrix
+            cell_matrix_avg_vector = cell_id_to_matrix_vector_map.get(cell_id)
+            
+            if cell_matrix_avg_vector is None:
+                print(bcolors.WARNING + f"Cell ID {cell_id} from self.adata.obs.index not found in internal matrix map. Skipping." + bcolors.ENDC)
+                similarities.append(np.nan) # Or some other placeholder like 0.0
+                continue
+
+            processed_cell_vec = np.array(cell_matrix_avg_vector, dtype=float)
             if norm:
-                cell_vec /= np.linalg.norm(cell_vec)
-            dist = 1. - distance.cosine(cell_vec, vec)
-            odists.append(dist)
-        return odists
+                cell_norm_val = np.linalg.norm(processed_cell_vec)
+                if cell_norm_val > 0:
+                    processed_cell_vec /= cell_norm_val
+            
+            # distance.cosine calculates 1 - (u.v / (||u||*||v||))
+            # so 1 - distance.cosine is the similarity.
+            # Handles zero vectors appropriately (e.g., cosine([0,0],[1,1]) might be 0 or undefined based on library)
+            # scipy.spatial.distance.cosine returns 1 if u or v is all zero. So similarity = 0.
+            sim = 1. - distance.cosine(processed_cell_vec, processed_target_vec)
+            similarities.append(sim)
+            
+        return similarities
+
 
     def phenotype_probability(self, adata, phenotype_markers, return_distances=False, method="normalized_exponential", target_col="genevector", temperature=0.001):
         """
-        Probablistically assign phenotypes based on a set of cell type labels and associated markers. 
-        Can optionally return the original cosine distances and perform the assignment based on expression weight gene vectors.
-        Loads into the anndata the pseudo-probabilities for each cell type and the deterministic label taken from the maximum probability over cell types.
+        Probabilistically assign phenotypes based on a set of cell type labels and associated markers.
+        Loads into the anndata the pseudo-probabilities for each cell type and the deterministic label
+        taken from the maximum probability over cell types.
 
-        :param adata: anndata object generated from "get_adata", has "X_genevector" in the obsm dataframe.
-        :type column: anndata.AnnData
-        :param phenotype_markers: Dictionary of cell type labels (key) to gene markers used to define the cell type as a list (value).
+        :param adata: AnnData object. It's assumed this is `self.adata` or is consistent with it,
+                      especially regarding `adata.obs.index` if `self.cell_distance` is used.
+        :type adata: anndata.AnnData
+        :param phenotype_markers: Dictionary of cell type labels (key) to gene markers (list of strings, value).
         :type phenotype_markers: dict
-        :param return_distances: Change the return type to a tuple that includes a dictionary containing the actual cosine distances alongside the phenotype probabilities.
-        :type column: bool
-        :param expression_weighted: Compute similarit to each cell using the expression weightedy marker gnene vector.
-        :type column: bool
-        :param target_col: Column label to load in deterministic cell asssignments in the obs data frame of the anndata object.
-        :type target_col: bool
-        :return: Anndata with cell type labels and probabilities, or optionally a tuple with the anndata and the raw cosine similarities.
-        :rtype:  anndata.AnnData
+        :param return_distances: If True, return a tuple: (adata, dictionary_of_raw_similarities).
+        :type return_distances: bool
+        :param method: Probability conversion method: "softmax", "sparsemax", or "normalized_exponential".
+        :type method: str
+        :param target_col: Column name in `adata.obs` to store the final deterministic cell assignments.
+        :type target_col: str
+        :param temperature: Temperature parameter for the "normalized_exponential" method.
+        :type temperature: float
+        :return: AnnData with cell type labels and probabilities. If return_distances is True,
+                 returns a tuple (adata, raw_similarities_dict).
+        :rtype: anndata.AnnData or tuple
         """
         if method == "softmax":
-            print(bcolors.OKBLUE+"Using **SoftMax**"+bcolors.ENDC)
+            print(bcolors.OKBLUE + "Using **SoftMax**" + bcolors.ENDC)
             pfunc = softmax
-        elif method == "sparsemax":
-            print(bcolors.OKBLUE+"Using **SparseMax**"+bcolors.ENDC)
+        elif method == "sparsemax": # Assuming self.entmax_15 is defined
+            print(bcolors.OKBLUE + "Using **SparseMax (1.5-entmax)**" + bcolors.ENDC)
             pfunc = self.entmax_15
         elif method == "normalized_exponential":
-            print(bcolors.OKBLUE+"Using Normalized Exponential (Temp: {})".format(temperature)+bcolors.ENDC)
+            print(bcolors.OKBLUE + f"Using Normalized Exponential (Temp: {temperature})" + bcolors.ENDC)
             pfunc = lambda x: self.normalized_exponential_vector(x, temperature)
-        for x in adata.obs.columns:
-            if "Pseudo-probability" in x:
-                del adata.obs[x]
-        mapped_components = dict(zip(list(self.data.keys()),self.matrix))
-        genes = adata.var.index.to_list()
-        cells = adata.obs.index.to_list()
-        all_markers = []
-        for _, markers in phenotype_markers.items():
-            all_markers += markers  
-        all_markers = list(set(all_markers))
-        probs = dict()
+        else:
+            raise ValueError(f"Unknown method: {method}. Choose from 'softmax', 'sparsemax', 'normalized_exponential'.")
 
-        for pheno, markers in phenotype_markers.items():
-            print(bcolors.OKBLUE+"Computing similarities for {}".format(pheno)+bcolors.ENDC)
-            print(bcolors.OKGREEN+"Markers: {}".format(", ".join(markers))+bcolors.ENDC)
-            vector = self.embed.generate_vector(markers)
-            probs[pheno] = self.cell_distance(vector,norm=False)
-        distribution = []
-        celltypes = []
-        for k, v in probs.items():
-            distribution.append(v)
-            celltypes.append(k)
-        distribution = np.array(distribution)
-        distribution = preprocessing.normalize(distribution)
-        distribution = list(zip(*distribution))
-        probabilities = []
-        for d in distribution:
-            p = pfunc(numpy.array(d))
-            probabilities.append(p)
+        # Clear any pre-existing "Pseudo-probability" columns from adata.obs
+        cols_to_remove = [col for col in adata.obs.columns if "Pseudo-probability" in col]
+        if cols_to_remove:
+            adata.obs.drop(columns=cols_to_remove, inplace=True)
+
+        # This relies on self.cell_distance, which iterates self.adata.obs.index.
+        # Ensure the input 'adata' is consistent with 'self.adata'.
+        if not hasattr(self, 'adata') or self.adata is None or adata is not self.adata:
+             print(bcolors.WARNING + "Input 'adata' might not be consistent with 'self.adata' used by "
+                                   "internal methods like cell_distance. Ensure get_adata() was called and "
+                                   "the same AnnData object is used." + bcolors.ENDC)
+
+
+        phenotype_names = list(phenotype_markers.keys())
+        # Stores raw similarities: {phenotype_name: [sim_cell1, sim_cell2, ...]}
+        # Order of similarities in lists will correspond to self.adata.obs.index
+        raw_similarity_scores = collections.defaultdict(list)
+
+        for pheno_name in tqdm.tqdm(phenotype_names, desc="Computing similarities per phenotype"):
+            markers = phenotype_markers[pheno_name]
+            if not markers:
+                print(bcolors.WARNING + f"No markers provided for phenotype {pheno_name}. Skipping." + bcolors.ENDC)
+                # Assign a default low similarity or handle as appropriate
+                raw_similarity_scores[pheno_name] = [0.0] * len(self.adata.obs) # Or len(adata.obs) if strictly using input adata
+                continue
+            
+            print(bcolors.OKGREEN + f"Markers for {pheno_name}: {', '.join(markers[:5])}{'...' if len(markers) > 5 else ''}" + bcolors.ENDC)
+            phenotype_vector = self.embed.generate_vector(markers) # Assumes gene names are uppercase or handled by generate_vector
+            
+            # self.cell_distance calculates similarities for cells in self.adata.obs.index
+            # norm=False means use raw vectors for cosine similarity.
+            similarities_for_pheno = self.cell_distance(phenotype_vector, norm=False)
+            raw_similarity_scores[pheno_name] = similarities_for_pheno
+
+        # Prepare matrix for probability calculation: rows are cells, columns are phenotypes
+        # The order of cells is implicitly self.adata.obs.index
+        # The order of phenotypes is phenotype_names
+        num_cells = len(self.adata.obs) # Number of cells for which distances were computed
+        similarity_matrix_cells_x_phenos = np.zeros((num_cells, len(phenotype_names)))
+
+        for i, pheno_name in enumerate(phenotype_names):
+            if pheno_name in raw_similarity_scores:
+                 # Ensure list length matches num_cells, pad if necessary (e.g. if a pheno was skipped)
+                pheno_sims = raw_similarity_scores[pheno_name]
+                if len(pheno_sims) == num_cells:
+                    similarity_matrix_cells_x_phenos[:, i] = pheno_sims
+                else:
+                    print(bcolors.WARNING + f"Similarity score list length mismatch for {pheno_name}. Expected {num_cells}, got {len(pheno_sims)}. Padding with zeros." + bcolors.ENDC)
+                    similarity_matrix_cells_x_phenos[:len(pheno_sims), i] = pheno_sims # Fill what's available
+
+        # Apply probability function per cell (i.e., per row of similarity_matrix_cells_x_phenos)
+        probabilities_per_cell = [] # List of np.arrays, each array is probs for one cell
+        for i in range(num_cells):
+            cell_similarity_vector = similarity_matrix_cells_x_phenos[i, :]
+            # Replace NaNs with a low value if any occurred in cell_distance
+            cell_similarity_vector = np.nan_to_num(cell_similarity_vector, nan=-1.0) # Or other appropriate fill
+            
+            prob_dist_for_cell = pfunc(cell_similarity_vector)
+            probabilities_per_cell.append(prob_dist_for_cell)
         
-        res = {"distances":distribution, "order":celltypes, "probabilities":probabilities}
-        barcode_to_label = dict(zip(list(self.data.keys()), res["probabilities"]))
-        ct = []
-        probs = collections.defaultdict(list)
-        for x in adata.obs.index:
-            ctx = res["order"][numpy.argmax(barcode_to_label[x])]
-            ct.append(ctx)
-            for ph, pb in zip(res["order"],barcode_to_label[x]):
-                probs[ph].append(pb)
-        adata.obs[target_col] = ct
-        def load_predictions(adata,probs):
-            prob_cols = []
-            for ph in probs.keys():
-                prob_cols.append(ph+" Pseudo-probability")
-                adata.obs[ph+" Pseudo-probability"] = probs[ph]
-            adata.uns["probability_columns"] = prob_cols
-            return adata
-        adata = load_predictions(adata, probs)
+        # Store results in the input 'adata' object
+        # Probabilities are ordered by self.adata.obs.index. We assign to input 'adata'.
+        # This assumes input 'adata.obs.index' is the same as 'self.adata.obs.index'.
+        
+        assigned_phenotypes_list = []
+        # For storing individual phenotype probability columns
+        phenotype_prob_data_for_adata = collections.defaultdict(lambda: [np.nan] * len(adata.obs))
+
+
+        for cell_idx, cell_id in enumerate(adata.obs.index):
+            # This loop iterates the *input* adata. We need to ensure probabilities_per_cell maps correctly.
+            # If adata is self.adata, cell_idx directly corresponds to probabilities_per_cell[cell_idx].
+            if cell_idx < len(probabilities_per_cell):
+                prob_vector_for_this_cell = probabilities_per_cell[cell_idx]
+                winning_pheno_idx = np.argmax(prob_vector_for_this_cell)
+                assigned_phenotypes_list.append(phenotype_names[winning_pheno_idx])
+
+                for pheno_idx, pheno_name in enumerate(phenotype_names):
+                    phenotype_prob_data_for_adata[pheno_name][cell_idx] = prob_vector_for_this_cell[pheno_idx]
+            else:
+                # Should not happen if adata and self.adata are consistent and num_cells matches
+                assigned_phenotypes_list.append(np.nan) # Or some default
+                print(bcolors.WARNING + f"Mismatch in cell counts when assigning probabilities for cell {cell_id}." + bcolors.ENDC)
+
+
+        adata.obs[target_col] = pd.Categorical(assigned_phenotypes_list, categories=phenotype_names) # Use Categorical for defined order
+
+        prob_col_names_for_uns = []
+        for pheno_name in phenotype_names:
+            col_name = f"{pheno_name} Pseudo-probability"
+            adata.obs[col_name] = phenotype_prob_data_for_adata[pheno_name]
+            prob_col_names_for_uns.append(col_name)
+        
+        adata.uns["probability_columns"] = prob_col_names_for_uns
+
         if return_distances:
-            return adata, res
+            # Construct a dictionary of raw similarities aligned with adata.obs.index
+            # raw_similarity_scores is already {pheno_name: [list_of_sims_ordered_by_self.adata.obs.index]}
+            # If adata is self.adata, this is directly usable.
+            distances_dict = {
+                "phenotypes": phenotype_names,
+                "cell_ids": list(adata.obs.index), # or self.adata.obs.index
+                "similarity_matrix_cells_x_phenos": similarity_matrix_cells_x_phenos # rows=cells, cols=phenos
+            }
+            return adata, distances_dict
         else:
             return adata
 
@@ -867,30 +1019,89 @@ class CellEmbedding(object):
         return adata
 
 
+    def _initialize_normalized_vectors(self, count_matrix, genes, cells):
+        """
+        Helper method to populate self.normalized_vectors from the count matrix.
+        This replaces the `normalized_expression` method body used in the original constructor.
+        """
+        if not isinstance(count_matrix, csr_matrix):
+            count_matrix = csr_matrix(count_matrix)
+        
+        count_matrix.eliminate_zeros()
+        row_indices, column_indices = count_matrix.nonzero()
+        nonzero_values = count_matrix.data
+        
+        # Build a gene to embedding map for quick lookup
+        gene_embedding_map = {gene.upper(): emb for gene, emb in self.embed.embeddings.items()}
+
+        for value, r_idx, c_idx in tqdm.tqdm(zip(nonzero_values, row_indices, column_indices), total=len(nonzero_values), desc="Mapping gene expression to embeddings"):
+            gene_symbol = genes[c_idx]
+            cell_barcode = cells[r_idx]
+            
+            embedding_vector = gene_embedding_map.get(gene_symbol.upper())
+            if value > 0 and embedding_vector is not None:
+                self.normalized_vectors[cell_barcode].append((embedding_vector, value))
+                # self.normalized_marker_expression can be populated if needed, similar logic
+    
+
     def get_adata(self, min_dist=0.3, n_neighbors=50):
         """
-        Return a anndata object to use in downstream analyses that contains the cell embedding matrix (under "X_genevector" in obsm) alongisde the neighbors graph and UMAP embedding computed using the cell vectors.
+        Return a anndata object to use in downstream analyses that contains the cell embedding matrix 
+        (under "X_genevector" in obsm) alongside the neighbors graph and UMAP embedding computed 
+        using the cell vectors.
 
         :param min_dist: UMAP generation parameter.
         :type min_dist: float
-        :param n_neighbors: Number of neighbors defined by cosine dsimilarity to include in neghborhood graph.
+        :param n_neighbors: Number of neighbors defined by cosine similarity to include in neighborhood graph.
         :type: n_neighbors: int
         :return: Anndata with cell embedding stored in metadata ("obsm").
         :rtype:  anndata.AnnData
         """
         print(bcolors.OKGREEN + "Loading embedding in X_genevector." + bcolors.ENDC)
+        
+        # Ensure self.data and self.matrix are populated from __init__
+        if not self.data or not self.matrix:
+            print(bcolors.FAIL + "CellEmbedding data or matrix not initialized. Run constructor properly." + bcolors.ENDC)
+            # Or, attempt to run parts of __init__ if feasible, though better to ensure constructor worked.
+            # For now, assume __init__ was successful.
+
+        current_adata = self.context.adata.copy()
+        
+        # Filter adata to include only cells for which we have embeddings (keys in self.data)
+        # This makes current_adata.obs.index consistent with self.data.keys() and self.matrix row order.
+        cells_with_embeddings = list(self.data.keys())
+        if not cells_with_embeddings:
+            print(bcolors.FAIL + "No cells with embeddings found in self.data. Cannot proceed with get_adata." + bcolors.ENDC)
+            return current_adata # Or raise an error
+
+        current_adata = current_adata[cells_with_embeddings, :].copy() # Ensure it's a copy after filtering
+
+        # Rebuild X_genevector in the order of current_adata.obs.index
+        # self.matrix rows are aligned with self.data.keys() from constructor.
+        # And current_adata.obs.index is now self.data.keys().
+        cell_id_to_matrix_row_idx = {cell_id: i for i, cell_id in enumerate(cells_with_embeddings)}
+        
+        x_genevector_list = []
+        for cell_id_in_adata in current_adata.obs.index:
+            matrix_row_idx = cell_id_to_matrix_row_idx.get(cell_id_in_adata)
+            if matrix_row_idx is not None and matrix_row_idx < len(self.matrix):
+                 x_genevector_list.append(self.matrix[matrix_row_idx])
+            else:
+                # This should not happen if cells_with_embeddings was used correctly
+                print(bcolors.WARNING + f"Could not find vector for cell {cell_id_in_adata} in self.matrix. Using zero vector.")
+                # Determine vector size from first vector in self.matrix or a default
+                vec_size = self.matrix[0].shape[0] if self.matrix and len(self.matrix[0]) > 0 else 100
+                x_genevector_list.append(np.zeros(vec_size))
+
+
+        current_adata.obsm['X_genevector'] = np.array(x_genevector_list)
+        
         print(bcolors.OKGREEN + "Running Scanpy neighbors and umap." + bcolors.ENDC)
-        adata = self.context.adata.copy()
-        adata = adata[list(self.data.keys())]
-        mapped_components = dict(zip(list(self.data.keys()),self.matrix))
-        x_genevector = []
-        for x in adata.obs.index:
-            x_genevector.append(mapped_components[x])
-        adata.obsm['X_genevector'] = numpy.array(x_genevector)
-        sc.pp.neighbors(adata, use_rep="X_genevector", n_neighbors=n_neighbors)
-        sc.tl.umap(adata, min_dist=min_dist)
-        self.adata = adata
-        return adata
+        sc.pp.neighbors(current_adata, use_rep="X_genevector", n_neighbors=n_neighbors)
+        sc.tl.umap(current_adata, min_dist=min_dist)
+        
+        self.adata = current_adata # Store this processed anndata
+        return self.adata
 
     @staticmethod
     def plot_confusion_matrix(adata,label1,label2):

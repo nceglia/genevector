@@ -3,16 +3,38 @@
 
 ## Installation
 
-Install using pip
-```
+### Requirements
+- Python >= 3.7
+- CUDA-compatible GPU (optional, but recommended for faster training)
+
+### Install from PyPI
+
+Install the latest stable version using pip:
+```bash
 pip install genevector
 ```
-or install from Github
-```
+
+### Install from Source
+
+For the latest development version, install directly from GitHub:
+
+```bash
+# Clone the repository
+git clone https://github.com/nceglia/genevector.git
+cd genevector
+
+# Create and activate a virtual environment (recommended)
 python3 -m venv gvenv
-source gvenv/bin/activate
-python3 pip install -r requirements.txt
-python3 setup.py install
+source gvenv/bin/activate  # On Windows: gvenv\Scripts\activate
+
+# Install dependencies and package
+pip install -r requirements.txt
+pip install .
+```
+
+For development, install in editable mode:
+```bash
+pip install -e .
 ```
 ## Tutorials (see "example" directory)
 

@@ -1,122 +1,217 @@
-![alt text](https://github.com/nceglia/genevector/blob/main/logo.png?raw=true)
-![alt text](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true)
+# GeneVector
+
+[![PyPI version](https://badge.fury.io/py/genevector.svg)](https://badge.fury.io/py/genevector)
+[![Documentation Status](https://readthedocs.org/projects/genevector/badge/?version=latest)](https://genevector.readthedocs.io/en/latest/?badge=latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+![GeneVector Logo](https://github.com/nceglia/genevector/blob/main/logo.png?raw=true)
+
+GeneVector is a powerful Python library for single-cell RNA sequencing analysis that learns distributed gene representations using a neural embedding approach. It enables advanced gene co-expression analysis, cell type annotation, and metagene discovery through vector arithmetic operations.
+
+## Key Features
+
+- **Gene Embeddings**: Learn distributed representations of genes based on co-expression patterns
+- **Cell Type Annotation**: Automated cell type assignment using marker gene sets
+- **Metagene Discovery**: Identify functionally related gene modules through clustering
+- **Vector Arithmetic**: Perform intuitive gene relationship analysis using vector operations
+- **Batch Correction**: Fast batch effect correction for multi-sample datasets
+- **GPU Acceleration**: CUDA support for efficient training on large datasets
+
+![Framework Overview](https://github.com/nceglia/genevector/blob/main/framework.png?raw=true)
 
 ## Installation
 
-Install using pip
-```
+### From PyPI (Recommended)
+```bash
 pip install genevector
 ```
-or install from Github
+
+### From Source
+```bash
+git clone https://github.com/nceglia/genevector.git
+cd genevector
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+pip install -e .
 ```
-python3 -m venv gvenv
-source gvenv/bin/activate
-python3 pip install -r requirements.txt
-python3 setup.py install
-```
-## Tutorials (see "example" directory)
 
-1. PBMC workflow: Identification of interferon stimulated metagene and cell type annotation.
-2. TICA workflow: Cell type assignment.
-3. SPECTRUM workflow: Vector arithmetic for site specific metagenes.
-4. FITNESS workflow: Identifying increasing metagenes in time series.
+### Dependencies
+- Python ≥ 3.7
+- PyTorch
+- Scanpy
+- NumPy
+- Pandas
+- Matplotlib
 
-## GeneVector Workflow
+For GPU acceleration, ensure you have CUDA-compatible PyTorch installed.
 
-### Loading scanpy dataset into GeneVector.
-GeneVector makes use of Scanpy anndata objects and requires that the raw count data be loaded into .X matrix. It is highly recommended to subset genes using the *seurat_v3* flavor in Scanpy. The ```device="cuda"``` flag should be omitted if there is no GPU available. All downstream analysis requires a GeneVectorDataset object.
+## Quick Start
 
-```
+```python
+import scanpy as sc
 from genevector.data import GeneVectorDataset
-from genevector.model import GeneVectorTrainer
+from genevector.model import GeneVector
 from genevector.embedding import GeneEmbedding, CellEmbedding
 
+# Load your single-cell data
+adata = sc.read_h5ad("your_data.h5ad")
+
+# Create GeneVector dataset
+dataset = GeneVectorDataset(adata, device="cuda")  # Use "cpu" if no GPU
+
+# Train the model
+model = GeneVector(dataset, output_file="genes.vec", emb_dimension=100)
+model.train(1000)
+
+# Load gene embeddings
+gene_embed = GeneEmbedding("genes.vec", dataset, vector="average")
+
+# Generate cell embeddings
+cell_embed = CellEmbedding(dataset, gene_embed)
+adata_embedded = cell_embed.get_adata()
+
+# Analyze gene similarities
+similarities = gene_embed.compute_similarities("CD8A")
+gene_embed.plot_similarities("CD8A", n_genes=10)
+```
+
+## Tutorials
+
+See the `example/` directory for comprehensive workflows:
+
+1. **PBMC workflow**: Identification of interferon stimulated metagene and cell type annotation
+2. **TICA workflow**: Cell type assignment  
+3. **SPECTRUM workflow**: Vector arithmetic for site specific metagenes
+4. **FITNESS workflow**: Identifying increasing metagenes in time series
+
+## Detailed Usage Guide
+
+### 1. Data Loading
+
+GeneVector uses Scanpy AnnData objects and requires raw count data in the `.X` matrix. It's recommended to subset genes using the `seurat_v3` flavor in Scanpy.
+
+```python
+from genevector.data import GeneVectorDataset
+from genevector.model import GeneVector
+from genevector.embedding import GeneEmbedding, CellEmbedding
 import scanpy as sc
 
-dataset = GeneVectorDataset(adata, device="cuda")
+# Load and preprocess data
+adata = sc.read_h5ad("your_data.h5ad")
+sc.pp.highly_variable_genes(adata, flavor="seurat_v3")
+
+# Create GeneVector dataset
+dataset = GeneVectorDataset(adata, device="cuda")  # Use "cpu" if no GPU
 ```
 
-### Training GeneVector
-After loading the expression, creating a GeneVector object will compute the mutual information between genes (can take up to 15 min for a dataset of 250k cells). This object is only required if you wish to train a model. Model training times vary depending on datasize. The 10k PBMC dataset can be trained in less than five minutes. ```emb_dimension``` sets the size of the learned gene vectors. Smaller values decrease training time, but values smaller than 50 may not provide optimal results.
+### 2. Model Training
 
-```
-cmps = GeneVector(dataset,
-                  output_file="genes.vec",
-                  emb_dimension=100,
-                  threshold=1e-6,
-                  device="cuda")
-cmps.train(1000, threshold=1e-6) # run for 1000 iterations or loss delta below 1e-6.
-```
+Creating a GeneVector object computes mutual information between genes (up to 15 minutes for 250k cells). Training times vary by dataset size - a 10k PBMC dataset trains in under 5 minutes. The `emb_dimension` parameter controls vector size (minimum 50 recommended).
 
-To understand model convergence, a loss plot by epoch can be generated.
+```python
+# Initialize and train model
+model = GeneVector(
+    dataset,
+    output_file="genes.vec",
+    emb_dimension=100,
+    threshold=1e-6,
+    device="cuda"
+)
 
-```
-cmps.plot()
-```
+# Train for 1000 iterations or until convergence
+model.train(1000, threshold=1e-6)
 
-### Loading Gene Embedding
-After training, two vector files are produced (for input and output weights). It is recommended to take the average of both weights ```vector="average"```). The GeneEmbedding class has several important analysis and visualization methods listed below.
-
-```
-gembed = GeneEmbedding("genes.vec", dataset, vector="average")
+# Visualize training progress
+model.plot()
 ```
 
-#### 1. Computing gene similarities
-A pandas dataframe can be generated using ```compute_similarities``` that includes the most similar genes and their cosine similarities for a given gene query. A barplot figure with a specified number of the most similar genes can be generated using ```plots_similarities```.
+### 3. Gene Embeddings Analysis
 
-```
-df = gembed.compute_similarities("CD8A")
-gembed.plot_similarities("CD8A",n_genes=10)
-```
+Training produces two vector files (input and output weights). Using the average of both weights is recommended for best results.
 
-#### 2. Generating Metagenes
-```get_adata``` produces and AnnData object that houses the gene embedding. This allows the use of Scanpy and AnnData visualization functions. The resolution parameter is passed directly to ```sc.tl.leiden``` to cluster the co-expression graph. ```get_metagenes``` returns a dictionary that stores each metagene as a list associated with an id. For a given id, the metagene can be visualized on a UMAP embedding using the ```plot_metagene``` function.
+```python
+# Load gene embeddings
+gene_embed = GeneEmbedding("genes.vec", dataset, vector="average")
 
-```
-gdata = embed.get_adata(resolution=40)
-metagenes = embed.get_metagenes(gdata)
-embed.plot_metagene(gdata, mg=isg_metagene)
-```
+# Compute gene similarities
+similarities_df = gene_embed.compute_similarities("CD8A")
+gene_embed.plot_similarities("CD8A", n_genes=10)
 
-### Loading the Cell Embedding
+# Generate metagenes through clustering
+gene_adata = gene_embed.get_adata(resolution=40)
+metagenes = gene_embed.get_metagenes(gene_adata)
 
-Using the GeneEmbedding object and the GeneVectorDataset object, a CellEmbedding object can be instantiated and used to produce a Scanpy AnnData object with ```get_adata```. This method stores cell embedding under ```X_genevector``` in layers and generates a UMAP embedding using Scanpy. Scanpy functionality can be used to visualize UMAPS (```sc.pl.umap```). 
-
-```
-cembed = CellEmbedding(dataset, embed)
-adata = cembed.get_adata()
+# Visualize specific metagenes
+gene_embed.plot_metagene(gene_adata, mg=metagenes[0])
 ```
 
-The cell embedding can be batch corrected using ```cembed.batch_correct```. The user is required to select a valid column present in the *obs* dataframe and specify a reference label. This is a very fast operation.
+### 4. Cell Embeddings
 
-```
-cembed.batch_correct(column="sample",reference="control")
-adata = cembed.get_adata()
-```
+Generate cell embeddings using the trained gene vectors. The embeddings are stored in AnnData format with automatic UMAP generation.
 
-#### Scoring Cells by Metagene
+```python
+# Create cell embeddings
+cell_embed = CellEmbedding(dataset, gene_embed)
+adata_embedded = cell_embed.get_adata()
 
-To score expression for each metagene against all cells, we can call the GeneEmbedding function ```score_metagenes``` with the cell-based AnnData object. To plot a heatmap of all metagenes over a set of cell labels, use the ```plot_metagenes_scores``` function. Metagenes are scored with the Scanpy ```sc.tl.score_genes``` function.
+# Visualize with Scanpy
+import scanpy as sc
+sc.pl.umap(adata_embedded)
 
-```
-embed.score_metagenes(adata, metagenes)
-embed.plot_metagenes_scores(adata,mgs,"cell_type")
-```
-
-#### Performing Cell Type Assignment
-
-Using a dictionary of cell type annotations to marker genes, each cell can be classified using the CellEmbedding function ```phenotype_probability```. This function returns a new annotated AnnData object, where the resulting classification can be found in ```.obs["genevector"]``` (the user can also supply a column name using ```column=```). A separate column in the obs dataframe is created to hold the pseudo-probabilities for each cell type. These probabilties can be shown on a UMAP using standard the Scanpy function ```sc.pl.umap```.
-
-```
-markers = dict()
-markers["T Cell"] = ["CD3D","CD3G","CD3E","TRAC","IL32","CD2"]
-markers["B/Plasma"] = ["CD79A","CD79B","MZB1","CD19","BANK1"]
-markers["Myeloid"] = ["LYZ","CST3","AIF1","CD68","C1QA","C1QB","C1QC"]
-
-annotated_adata = cembed.phenotype_probability(adata,markers)
-
-prob_cols = [x for x in annotated_adata.obs.columns.tolist() if "Pseudo-probability" in x]
-sc.pl.umap(annotated_adata,color=prob_cols+["genevector"],size=25)
+# Optional: Batch correction (fast operation)
+cell_embed.batch_correct(column="sample", reference="control")
+adata_corrected = cell_embed.get_adata()
 ```
 
-##### *All additional analyses described in the manuscript, including comparisons to LDVAE and CellAssign, can be found in Jupyter notebooks in the examples directory. Results were computed for v0.0.1.*
+### 5. Metagene Scoring and Cell Type Assignment
+
+```python
+# Score cells by metagenes
+gene_embed.score_metagenes(adata_embedded, metagenes)
+gene_embed.plot_metagenes_scores(adata_embedded, metagenes, "cell_type")
+
+# Define marker genes for cell types
+markers = {
+    "T Cell": ["CD3D", "CD3G", "CD3E", "TRAC", "IL32", "CD2"],
+    "B/Plasma": ["CD79A", "CD79B", "MZB1", "CD19", "BANK1"],
+    "Myeloid": ["LYZ", "CST3", "AIF1", "CD68", "C1QA", "C1QB", "C1QC"]
+}
+
+# Perform automated cell type assignment
+annotated_adata = cell_embed.phenotype_probability(adata_embedded, markers)
+
+# Visualize results
+prob_cols = [col for col in annotated_adata.obs.columns if "Pseudo-probability" in col]
+sc.pl.umap(annotated_adata, color=prob_cols + ["genevector"], size=25)
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Citation
+
+If you use GeneVector in your research, please cite:
+
+```bibtex
+@software{genevector,
+  author = {Nicholas Ceglia},
+  title = {GeneVector: Single Cell Gene Embedding Library},
+  url = {https://github.com/nceglia/genevector},
+  version = {0.3.0},
+  year = {2024}
+}
+```
+
+## Documentation
+
+For detailed documentation and examples, visit: https://genevector.readthedocs.io
+
+---
+
+*Additional analyses described in the manuscript, including comparisons to LDVAE and CellAssign, can be found in Jupyter notebooks in the examples directory. Results were computed for v0.0.1.*

@@ -135,8 +135,35 @@ class GeneVectorDataset(Dataset):
     :type processes: int
     """
 
-    def __init__(self, adata, device="cpu", mi_scores=None, load_expression=True, signed_mi=True):
+    def __init__(self, adata, device="cpu", mi_scores=None, load_expression=True,
+                 signed_mi=True, target="mi", target_kwargs=None,
+                 mi_backend="auto", use_cache=True):
         """Constructor method
+
+        Parameters
+        ----------
+        adata : AnnData
+            The AnnData Scanpy object with expression data in .X.
+        device : str
+            Device for torch tensors ("cpu", "cuda", "mps").
+        mi_scores : dict, optional
+            Side-load precomputed target scores.
+        load_expression : bool
+            Whether to load expression into Context dicts.
+        signed_mi : bool
+            If True, multiply MI by correlation sign for directional MI.
+        target : str or callable
+            Name of registered target function, or a callable with
+            signature f(X, gene_names, **kwargs) -> dict[dict[float]].
+            Default: "mi" (mutual information).
+        target_kwargs : dict, optional
+            Extra keyword arguments passed to the target function.
+        mi_backend : str
+            Backend for MI computation: "auto", "numpy", "numba", "gpu".
+            Only used when target="mi".
+        use_cache : bool
+            If True, cache computed target scores to disk and reload
+            on subsequent runs with the same data+parameters.
         """
         adata.var.index = [str(x).upper() for x in adata.var.index.tolist()]
         adata.X = sparse.csr_matrix(adata.X)
@@ -148,6 +175,11 @@ class GeneVectorDataset(Dataset):
         self.device = device
         self.mi_scores = mi_scores
         self.signed_mi = signed_mi
+        self.target = target
+        self.target_kwargs = target_kwargs or {}
+        self.mi_backend = mi_backend
+        self.use_cache = use_cache
+        self.num_pairs = None
 
     @staticmethod
     def get_gene_entropy(adata):
@@ -197,9 +229,27 @@ class GeneVectorDataset(Dataset):
         :type targets: dict
         """
         self.mi_scores = targets
-    
-    def generate_mi_scores(self):
-        
+
+    def save_target_scores(self, filepath):
+        """Save computed target scores to a specific .npz file."""
+        from .cache import save_scores
+        key = filepath.replace(".npz", "").replace("/", "_")
+        save_scores(key, self.mi_scores, self.data.genes)
+
+    def load_target_scores(self, filepath):
+        """Load target scores from a specific .npz file."""
+        data = np.load(filepath, allow_pickle=False)
+        matrix = data["scores"]
+        gene_names = list(data["genes"])
+        n = len(gene_names)
+        self.mi_scores = collections.defaultdict(lambda: collections.defaultdict(float))
+        for i in range(n):
+            for j in range(n):
+                if i != j and matrix[i, j] != 0:
+                    self.mi_scores[gene_names[i]][gene_names[j]] = round(float(matrix[i, j]), 5)
+
+    def _generate_mi_scores_legacy(self):
+        """Legacy MI computation (kept for reference/testing)."""
         print(bcolors.OKGREEN + "Getting gene pairs combinations." + bcolors.ENDC)
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
@@ -210,7 +260,7 @@ class GeneVectorDataset(Dataset):
         pairs = list(itertools.combinations(vgenes, 2))
         counts = collections.defaultdict(lambda : collections.defaultdict(int))
         self.num_pairs = len(pairs)
-        
+
         for c, p in self.data.expression.items():
             for g,v in p.items():
                 counts[g][c] += int(v)
@@ -218,12 +268,12 @@ class GeneVectorDataset(Dataset):
         for p1,p2 in tqdm.tqdm(pairs):
             common = bcs[p1].intersection(bcs[p2])
             if len(common) ==0: continue
-            
+
             c1 = counts[p1]
             c2 = counts[p2]
             x = [c1[bc] for bc in common]
             y = [c2[bc] for bc in common]
-            
+
             pxy, _, _ = numpy.histogram2d(x,y, density=True)
             pxy = pxy / pxy.sum()
             px = np.sum(pxy, axis=1)
@@ -236,6 +286,50 @@ class GeneVectorDataset(Dataset):
             mi_scores[p1][p2] = mi
             mi_scores[p2][p1] = mi
         self.mi_scores = mi_scores
+
+    def _compute_target_scores(self):
+        """Dispatch to the appropriate target function."""
+        from .metrics import get_target_function, TARGETS
+
+        X = self.adata.X
+        gene_names = self.data.genes
+
+        # --- Check cache ---
+        if self.use_cache:
+            from .cache import compute_cache_key, load_scores, save_scores
+
+            target_name = self.target if isinstance(self.target, str) else "custom"
+            cache_key = compute_cache_key(
+                X, gene_names, target_name, self.target_kwargs, self.signed_mi
+            )
+            cached_scores, _ = load_scores(cache_key)
+            if cached_scores is not None:
+                self.mi_scores = cached_scores
+                self.num_pairs = len(gene_names) * (len(gene_names) - 1) // 2
+                return
+
+        # --- Compute ---
+        if callable(self.target):
+            print(bcolors.OKGREEN + "Computing custom target scores." + bcolors.ENDC)
+            self.mi_scores = self.target(X, gene_names, **self.target_kwargs)
+        elif isinstance(self.target, str):
+            print(bcolors.OKGREEN + f"Computing '{self.target}' target scores." + bcolors.ENDC)
+            fn = get_target_function(self.target)
+            kwargs = {
+                "signed": self.signed_mi,
+                "backend": self.mi_backend,
+                "device": self.device,
+                **self.target_kwargs,
+            }
+            self.mi_scores = fn(X, gene_names, **kwargs)
+        else:
+            raise TypeError(f"target must be str or callable, got {type(self.target)}")
+
+        self.num_pairs = len(gene_names) * (len(gene_names) - 1) // 2
+
+        # --- Save to cache ---
+        if self.use_cache:
+            save_scores(cache_key, self.mi_scores, gene_names)
 
     @staticmethod
     def mutual_info():
@@ -297,78 +391,74 @@ class GeneVectorDataset(Dataset):
         return joint_dist
 
     def create_inputs_outputs(self, c=100.):
-        print(bcolors.WARNING+"*****************"+bcolors.ENDC)
-        print(bcolors.HEADER+"Loading Dataset."+bcolors.ENDC)
-        print(bcolors.WARNING+"*****************\n"+bcolors.ENDC)
+        print(bcolors.WARNING + "*****************" + bcolors.ENDC)
+        print(bcolors.HEADER + "Loading Dataset." + bcolors.ENDC)
+        print(bcolors.WARNING + "*****************\n" + bcolors.ENDC)
 
+        # --- Entropy ---
         entropy = self.get_gene_entropy(self.adata)
+        ent = [entropy[g] for g in self.data.genes]
 
-        ent = []
-        for g in self.data.genes:
-            ent.append(entropy[g])
+        # --- Compute or load target scores ---
+        if self.mi_scores is None:
+            self._compute_target_scores()
+        else:
+            print(bcolors.OKCYAN + "Using preloaded target scores." + bcolors.ENDC)
 
-        if self.mi_scores == None:
-            self.generate_mi_scores()
-            
-            if self.signed_mi:
-                print("...Directional MI....")
-                correlation_matrix = self.adata.to_df().corr()
-                self.correlation = correlation_matrix.to_dict()
+        print(bcolors.FAIL + "Scores Loaded." + bcolors.ENDC)
 
-                modified_value_dict = {}
-
-                for row_name in self.mi_scores.keys():
-                    modified_value_dict[row_name] = {}
-                    for col_name in self.mi_scores[row_name].keys():
-                        original_value = self.mi_scores[row_name][col_name]
-                        modified = self.correlation[row_name][col_name] * original_value
-                        self.mi_scores[row_name][col_name] = round(modified,5)
-            
-        print(bcolors.FAIL+"MI Loaded."+bcolors.ENDC)
-
+        # --- Rebuild gene index ---
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
         index_gene = {idx: w for (idx, w) in enumerate(self.data.genes)}
         self.data.gene2id = gene_index
         self.data.id2gene = index_gene
 
-        names=self.adata.var.index.tolist()
+        # --- Build training tensors (vectorized) ---
+        self._build_training_tensors(c=c)
 
-        self._i_idx = list()
-        self._j_idx = list()
-        self._xij = list()
-        self._ei = list()
-        for gene in names:
-            self._ei.append(entropy)
-
-        pairs = list(itertools.combinations(names,2))
-        self.num_pairs = len(pairs)
-
-        print(bcolors.OKGREEN + "Loading Batches for Training." + bcolors.ENDC)
-    
-        for gene in tqdm.tqdm(self.data.genes):
-            for cgene in self.data.genes:
-                if gene == cgene: continue
-                wi = self.data.gene2id[gene]
-                ci = self.data.gene2id[cgene]
-                self._i_idx.append(wi)
-                self._j_idx.append(ci)
-                value = self.mi_scores[gene][cgene] * c**2
-                if value > 0 or self.signed_mi:
-                    self._xij.append(value)
-                else:
-                    self._xij.append(0.)
-
+        # --- Entropy tensor ---
         if self.device == "cuda":
-            self._i_idx = torch.cuda.LongTensor(self._i_idx).cuda()
-            self._j_idx = torch.cuda.LongTensor(self._j_idx).cuda()
-            self._xij = torch.cuda.FloatTensor(self._xij).cuda()
             self._ent = torch.FloatTensor(ent).cuda()
         else:
-            self._i_idx = torch.LongTensor(self._i_idx).to(self.device)
-            self._j_idx = torch.LongTensor(self._j_idx).to(self.device)
-            self._xij = torch.FloatTensor(self._xij).to(self.device)
             self._ent = torch.FloatTensor(ent).to(self.device)
+
         print(bcolors.OKCYAN + "Ready to train." + bcolors.ENDC)
+
+    def _build_training_tensors(self, c=100.):
+        """Build i_idx, j_idx, xij tensors using vectorized numpy ops."""
+        genes = self.data.genes
+        n = len(genes)
+
+        # build dense score matrix from mi_scores dict
+        score_matrix = np.zeros((n, n), dtype=np.float32)
+        for i, g1 in enumerate(genes):
+            if g1 in self.mi_scores:
+                for j, g2 in enumerate(genes):
+                    if i != j and g2 in self.mi_scores[g1]:
+                        score_matrix[i, j] = self.mi_scores[g1][g2]
+
+        score_matrix *= c ** 2
+
+        if not self.signed_mi:
+            score_matrix[score_matrix < 0] = 0.
+
+        # build index arrays for all off-diagonal pairs
+        idx = np.arange(n)
+        i_grid, j_grid = np.meshgrid(idx, idx, indexing='ij')
+        off_diag = i_grid != j_grid
+
+        i_idx = i_grid[off_diag].ravel()
+        j_idx = j_grid[off_diag].ravel()
+        xij = score_matrix[off_diag].ravel()
+
+        if self.device == "cuda":
+            self._i_idx = torch.cuda.LongTensor(i_idx)
+            self._j_idx = torch.cuda.LongTensor(j_idx)
+            self._xij = torch.cuda.FloatTensor(xij)
+        else:
+            self._i_idx = torch.LongTensor(i_idx).to(self.device)
+            self._j_idx = torch.LongTensor(j_idx).to(self.device)
+            self._xij = torch.FloatTensor(xij).to(self.device)
     
     def get_batches(self, batch_size):
         if self.device == "cuda":

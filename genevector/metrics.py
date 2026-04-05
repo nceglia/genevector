@@ -453,3 +453,7 @@ def _matrix_to_score_dict(matrix, gene_names):
             if i != j:
                 scores[gene_names[i]][gene_names[j]] = round(float(matrix[i, j]), 5)
     return scores
+
+
+# ─── Import graph targets to trigger registration ──────────────
+from . import _graph_targets  # noqa: F401, E402

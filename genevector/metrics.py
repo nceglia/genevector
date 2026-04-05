@@ -13,6 +13,12 @@ try:
 except ImportError:
     HAS_NUMBA = False
 
+try:
+    from ._rust import compute_mi_pairs as _rust_mi_pairs
+    HAS_RUST = True
+except ImportError:
+    HAS_RUST = False
+
 
 # ─── Discretization ────────────────────────────────────────────
 
@@ -276,8 +282,9 @@ def compute_mi_gpu(X, gene_names, n_bins=10, signed=False, device="cuda"):
                 continue
 
             flat_idx = a_vals * nb + b_vals
-            joint = torch.zeros(na * nb, dtype=torch.float64, device=device)
-            joint.scatter_add_(0, flat_idx.long(), torch.ones_like(flat_idx, dtype=torch.float64))
+            joint = torch.zeros(na * nb, dtype=torch.float32, device=device)
+            joint.scatter_add_(0, flat_idx.long(), torch.ones_like(flat_idx, dtype=torch.float32))
+
             joint = joint.reshape(na, nb)
 
             total = joint.sum()
@@ -298,6 +305,36 @@ def compute_mi_gpu(X, gene_names, n_bins=10, signed=False, device="cuda"):
             gene_b = gene_names[j]
             mi_scores[gene_a][gene_b] = round(mi, 5)
             mi_scores[gene_b][gene_a] = round(mi, 5)
+
+    return mi_scores
+
+
+# ─── Tier D: Rust MI ───────────────────────────────────────────
+
+def compute_mi_rust(X, gene_names, n_bins=10, signed=False):
+    """Rust-accelerated MI computation via PyO3."""
+    if not HAS_RUST:
+        raise ImportError("Rust backend not available. "
+                          "Build with: maturin develop --release")
+
+    X_disc, n_bins_per_gene = discretize_genes(X, n_bins=n_bins)
+
+    corr_signs = None
+    if signed:
+        if issparse(X):
+            X_dense = np.asarray(X.todense())
+        else:
+            X_dense = X
+        corr_signs = np.nan_to_num(np.corrcoef(X_dense.T), nan=0.0).astype(np.float32)
+
+    triples = _rust_mi_pairs(X_disc, n_bins_per_gene, corr_signs)
+
+    mi_scores = collections.defaultdict(lambda: collections.defaultdict(float))
+    for i, j, mi in triples:
+        gene_a = gene_names[i]
+        gene_b = gene_names[j]
+        mi_scores[gene_a][gene_b] = round(mi, 5)
+        mi_scores[gene_b][gene_a] = round(mi, 5)
 
     return mi_scores
 
@@ -332,12 +369,18 @@ def target_mi(X, gene_names, signed=False, backend="auto",
         if device == "cuda":
             return compute_mi_gpu(X, gene_names, n_bins=n_bins,
                                   signed=signed, device=device)
+        elif HAS_RUST:
+            return compute_mi_rust(X, gene_names, n_bins=n_bins,
+                                   signed=signed)
         elif HAS_NUMBA:
             return compute_mi_numba(X, gene_names, n_bins=n_bins,
                                     signed=signed)
         else:
             return compute_mi_vectorized(X, gene_names, n_bins=n_bins,
                                          signed=signed)
+    elif backend == "rust":
+        return compute_mi_rust(X, gene_names, n_bins=n_bins,
+                               signed=signed)
     elif backend == "numpy":
         return compute_mi_vectorized(X, gene_names, n_bins=n_bins,
                                      signed=signed)

@@ -33,14 +33,10 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64
-          - os: ubuntu-latest
-            target: aarch64
           - os: macos-latest
             target: x86_64
           - os: macos-latest
             target: aarch64
-          - os: windows-latest
-            target: x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

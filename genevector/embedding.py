@@ -298,16 +298,6 @@ class GeneEmbedding(object):
         df = pandas.DataFrame.from_dict({"Gene":genes, "Similarity":distance})
         return df
 
-    def generate_weighted_vector(self, genes, markers, weights):
-        vector = []
-        for gene, vec in zip(self.genes, self.vector):
-            if gene in genes and gene in weights:
-                vector.append(weights[gene] * numpy.array(vec))
-            if gene not in genes and gene in markers and gene in weights:
-                vector.append(list(weights[gene] * numpy.negative(numpy.array(vec))))
-        return list(numpy.sum(vector, axis=0))
-
-
     def generate_vector(self, genes):
         """
         Compute an averagve vector representation for a set of genes in the learned gene embedding.
@@ -345,18 +335,20 @@ class GeneEmbedding(object):
         return list(numpy.average(vector, axis=0, weights=weight))
 
 
-    def cluster_definitions_as_df(self, top_n=20):
-        similarities = self.cluster_definitions
-        clusters = []
-        symbols = []
-        for key, genes in similarities.items():
-            clusters.append(key)
-            symbols.append(", ".join(genes[:top_n]))
-        df = pandas.DataFrame.from_dict({"Cluster Name":clusters, "Top Genes":symbols})
-        return df
-
     @staticmethod
     def read_vector(vec):
+        """Read a .vec file into a dict of gene vectors and a dimension string.
+
+        Parameters
+        ----------
+        vec : str
+            Path to .vec file.
+
+        Returns
+        -------
+        tuple of (dict, str)
+            Mapping from gene symbol to list of floats, and dimension header line.
+        """
         lines = open(vec,"r").read().splitlines()
         dims = lines.pop(0)
         vecs = dict()
@@ -416,6 +408,17 @@ class GeneEmbedding(object):
 
     @staticmethod
     def average_vector_results(vec1, vec2, fname):
+        """Average two .vec embedding files and write the result to a new file.
+
+        Parameters
+        ----------
+        vec1 : str
+            Path to first .vec file.
+        vec2 : str
+            Path to second .vec file.
+        fname : str
+            Output path for averaged .vec file.
+        """
         output = open(fname,"w")
         vec1, dims = GeneEmbedding.read_vector(vec1)
         vec2, _ = GeneEmbedding.read_vector(vec2)
@@ -461,12 +464,7 @@ class CellEmbedding(object):
         genes = adata_copy.var.index.to_numpy()
         barcodes = adata_copy.obs.index.to_numpy()
 
-        # Note: The original code had normalized_vectors and normalized_marker_expression
-        # initialized here but populated in a separate normalized_expression method.
-        # self.normalized_vectors is populated by the call to self.normalized_expression_for_init
         self.normalized_vectors = collections.defaultdict(list)
-        
-        # Assuming the original 'normalized_expression' method was intended for __init__
         self._initialize_normalized_vectors(adata_copy.X, genes, barcodes)
 
         print(bcolors.OKGREEN + "Generating Cell Vectors." + bcolors.ENDC)
@@ -530,16 +528,6 @@ class CellEmbedding(object):
         print(bcolors.BOLD + "Finished CellEmbedding Initialization." + bcolors.ENDC)
 
 
-    def normalized_expression(self, normalized_matrix, genes, cells):
-        normalized_matrix.eliminate_zeros()
-        row_indices, column_indices = normalized_matrix.nonzero()
-        nonzero_values = normalized_matrix.data
-        entries = list(zip(nonzero_values, row_indices, column_indices))
-        for value, i, j in tqdm.tqdm(entries):
-            if value > 0 and genes[j].upper() in self.embed.embeddings:
-                self.normalized_vectors[cells[i]].append((self.embed.embeddings[genes[j].upper()],value))
-                self.normalized_marker_expression[cells[i]][genes[j]] = value
-
     def batch_correct(self, column, reference):
         """
         Corrects the matrix of cell vectors by computing vector representations for each category in a given variable in the dataset.
@@ -602,6 +590,15 @@ class CellEmbedding(object):
         return adata.X[:,adata.var.index.tolist().index(gene)].T.todense().tolist()[0]
 
     def compare_expression_to_similarity(self, adata, gene):
+        """Plot gene expression vs embedding similarity for a single gene.
+
+        Parameters
+        ----------
+        adata : AnnData
+            Annotated data with UMAP coordinates.
+        gene : str
+            Gene symbol to compare.
+        """
         vec = self.embed.get_vector(gene)
         adata.obs["{}+".format(gene)] = self.cell_distance(vec)
         adata.obs["{}_exp".format(gene)] = self.get_expression(adata, gene)
@@ -647,11 +644,45 @@ class CellEmbedding(object):
         return markers
 
     def compare_classification(self,adata,column1, column2):
+        """Plot a heatmap comparing two categorical assignments.
+
+        Parameters
+        ----------
+        adata : AnnData
+            Annotated data matrix.
+        column1 : str
+            First obs column (rows of heatmap).
+        column2 : str
+            Second obs column (columns of heatmap).
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            Heatmap axes object.
+        """
         df = adata.obs[[column1,column2]]
         df=pd.crosstab(df[column1],df[column2],normalize='index')
         return sns.heatmap(df)
 
     def phenotype_qc(self, adata, phenotype, genes, norm=True):
+        """Quality control comparison of pseudo-probability, module score, and embedding similarity.
+
+        Parameters
+        ----------
+        adata : AnnData
+            Annotated data with UMAP and phenotype probabilities.
+        phenotype : str
+            Phenotype label name.
+        genes : list of str
+            Marker genes for the phenotype.
+        norm : bool
+            If True, normalize cell vectors before distance computation.
+
+        Returns
+        -------
+        pandas.DataFrame
+            QC metrics per cell.
+        """
         probability = "{} Pseudo-probability".format(phenotype)
         score_name =  "{} Module Score".format(phenotype)
         similarity_name = "{} Similarity".format(phenotype)
@@ -669,6 +700,15 @@ class CellEmbedding(object):
         return df
     
     def module_score_r2(self, adata, markers):
+        """Plot R-squared between pseudo-probability and module score for each phenotype.
+
+        Parameters
+        ----------
+        adata : AnnData
+            Annotated data with pseudo-probabilities and module scores.
+        markers : dict
+            Mapping of phenotype name to gene list.
+        """
         values = []
         phs = []
         for phenotype, genes in markers.items():
@@ -686,6 +726,19 @@ class CellEmbedding(object):
         ax.set_title("Probability vs Module Score (r2)")
 
     def plot_probabilities(self,adata,ncols=2,save="probs.pdf",palette="magma"):
+        """Plot UMAP colored by pseudo-probability for all phenotypes.
+
+        Parameters
+        ----------
+        adata : AnnData
+            Annotated data with pseudo-probability columns.
+        ncols : int
+            Number of columns in subplot grid.
+        save : str
+            File path for saving the figure.
+        palette : str
+            Matplotlib colormap name.
+        """
         prob_cols = []
         for x in adata.obs.columns:
             if "Pseudo-probability" in x:
@@ -727,6 +780,24 @@ class CellEmbedding(object):
         return markers
 
     def normalized_marker_expression(self, normalized_matrix, genes, cells, markers):
+        """Extract normalized expression for marker genes from a sparse matrix.
+
+        Parameters
+        ----------
+        normalized_matrix : scipy.sparse matrix
+            Normalized expression matrix.
+        genes : array-like
+            Gene names.
+        cells : array-like
+            Cell barcodes.
+        markers : list of str
+            Marker genes to extract.
+
+        Returns
+        -------
+        dict of dict
+            Mapping from cell barcode to {gene: expression_value}.
+        """
         normalized_expression = collections.defaultdict(dict)
         normalized_matrix.eliminate_zeros()
         row_indices, column_indices = normalized_matrix.nonzero()
@@ -739,6 +810,22 @@ class CellEmbedding(object):
 
     @staticmethod
     def entmax_15(values):
+        """Sparse probability mapping using 1.5-entmax (sparsemax variant).
+
+        Applies a sparse transformation that maps real-valued scores to a
+        probability distribution where low-scoring entries are driven to
+        exactly zero.
+
+        Parameters
+        ----------
+        values : array-like
+            Input scores.
+
+        Returns
+        -------
+        np.ndarray
+            Sparse probability distribution summing to 1.
+        """
         # Sort values in descending order
         sorted_values = np.sort(values)[::-1]
         # Compute the cumulative sum of the sorted values raised to the power of 2
@@ -789,6 +876,20 @@ class CellEmbedding(object):
 
     @staticmethod
     def normalized_exponential_vector(values, temperature=0.000001):
+        """Temperature-scaled softmax normalization.
+
+        Parameters
+        ----------
+        values : array-like
+            Input scores.
+        temperature : float
+            Temperature parameter. Lower values produce sharper distributions.
+
+        Returns
+        -------
+        np.ndarray
+            Probability distribution summing to 1.
+        """
         assert temperature > 0, "Temperature must be positive"
         values_arr = np.array(values, dtype=float) # Ensure float for division
         exps = np.exp(values_arr / temperature)
@@ -995,12 +1096,6 @@ class CellEmbedding(object):
             return adata
 
 
-    def cosine_sim_qc(self, dists):
-        ddf = pd.DataFrame(data = np.array(dist["distances"]),columns=dist['order'])
-        sns.pairplot(data=ddf,kind="reg",plot_kws={"scatter_kws":{"s":0.1}})
-        return ddf
-    
-
     def cluster(self, adata, up_markers, down_markers=dict()):
         """
         Run GaussianMixture over cosine similarities for up and down markers.
@@ -1062,7 +1157,7 @@ class CellEmbedding(object):
     def _initialize_normalized_vectors(self, count_matrix, genes, cells):
         """
         Helper method to populate self.normalized_vectors from the count matrix.
-        This replaces the `normalized_expression` method body used in the original constructor.
+        Populates self.normalized_vectors from the count matrix during construction.
         """
         if not isinstance(count_matrix, csr_matrix):
             count_matrix = csr_matrix(count_matrix)

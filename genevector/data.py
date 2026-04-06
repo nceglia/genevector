@@ -333,65 +333,6 @@ class GeneVectorDataset(Dataset):
         if self.use_cache:
             save_scores(cache_key, self.mi_scores, gene_names)
 
-    @staticmethod
-    def mutual_info():
-        pxy, _, _ = numpy.histogram2d(x,y, density=True)
-        pxy = pxy / pxy.sum()
-        px = np.sum(pxy, axis=1)
-        px = px / px.sum()
-        py = np.sum(pxy, axis=0)
-        py = py / py.sum()
-        px_py = px[:, None] * py[None, :]
-        nzs = pxy > 0
-        mi = np.sum(pxy[nzs] * numpy.log2((pxy[nzs] / px_py[nzs])))
-        return mi
-
-    @staticmethod
-    def mutual_info(rna_ind_exprA, rna_ind_exprB, nbinsA, nbinsB):
-        pxy = numpy.zeros((nbinsA,nbinsB))
-        indxs = list(zip(rna_ind_exprA, rna_ind_exprB))
-        for indA, indB in set(indxs):
-            pxy[indA, indB] = indxs.count((indA,indB))
-        pxy = pxy[1:,1:]
-        pxy = pxy / pxy.sum()
-        px = np.sum(pxy, axis=1)
-        px = px / px.sum()
-        py = np.sum(pxy, axis=0)
-        py = py / py.sum()
-        px_py = px[:, None] * py[None, :]
-        nzs = pxy > 0
-        pxy = pxy[nzs]
-        px_py = px_py[nzs]
-        mi = np.sum(pxy * np.log2((pxy / px_py)))
-        return mi
-
-    @staticmethod
-    def rna_expr_percentile_hist(rna_expr, min_frac_coverage = .05):
-        rna_expr = np.array(sorted(rna_expr))
-        non_zero_ind_start = rna_expr.searchsorted(0, 'right')
-        n_tot = len(rna_expr)
-        min_coverage = int(np.ceil((n_tot - non_zero_ind_start)*min_frac_coverage))
-        bins_out = [0]
-        i = min_coverage
-        while i < n_tot - min_coverage + 1:
-            if rna_expr[i] > bins_out[-1]:
-                bins_out.append(rna_expr[i])
-                i += min_coverage
-            else:
-                i = rna_expr.searchsorted(rna_expr[i], 'right')
-        return np.array(bins_out)
-
-    @staticmethod
-    def rna_expr_to_bin_inds(rna_expr, bins):
-        return [0 if x == 0 else bins.searchsorted(x) for x in rna_expr]
-
-    @staticmethod
-    def rna_ind_vecs_to_joint_dist(rna_ind_exprA, rna_ind_exprB, nbinsA, nbinsB):
-        joint_dist = numpy.zeros((nbinsA,nbinsB))
-        for indA, indB in zip(rna_ind_exprA,rna_ind_exprB):
-            joint_dist[indA, indB] += 1
-        return joint_dist
-
     def create_inputs_outputs(self, c=100.):
         """Compute target scores, build training tensors, and prepare for model training.
 

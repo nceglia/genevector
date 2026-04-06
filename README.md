@@ -1,5 +1,6 @@
 # GeneVector
 
+[![Tests](https://github.com/nceglia/genevector/actions/workflows/tests.yml/badge.svg)](https://github.com/nceglia/genevector/actions/workflows/tests.yml)
 [![PyPI version](https://badge.fury.io/py/genevector.svg)](https://badge.fury.io/py/genevector)
 [![Documentation Status](https://readthedocs.org/projects/genevector/badge/?version=latest)](https://genevector.readthedocs.io/en/latest/?badge=latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

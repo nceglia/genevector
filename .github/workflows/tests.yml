@@ -1,0 +1,38 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          pip install maturin
+          maturin develop --release
+          pip install pytest numpy scipy scikit-learn torch --index-url https://download.pytorch.org/whl/cpu
+          pip install scanpy anndata tqdm seaborn matplotlib pandas leidenalg umap-learn scikit-misc
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+      - name: Verify imports
+        run: |
+          python -c "from genevector.metrics import TARGETS; print('Targets:', sorted(TARGETS.keys()))"
+          python -c "from genevector._aggregation import AGGREGATIONS; print('Aggregations:', sorted(AGGREGATIONS.keys()))"
+          python -c "from genevector.metrics import HAS_RUST; print('Rust backend:', HAS_RUST)"

@@ -20,7 +20,8 @@ jobs:
       - name: Install and test
         run: |
           pip install maturin
-          maturin develop --release
+          maturin build --release
+          pip install dist/*.whl
           pip install pytest numpy scipy scikit-learn torch --index-url https://download.pytorch.org/whl/cpu
           pip install scanpy anndata tqdm seaborn matplotlib pandas leidenalg umap-learn scikit-misc
           pytest tests/ -v

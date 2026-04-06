@@ -36,7 +36,7 @@ def main():
     )
     update_file(
         "Cargo.toml",
-        r'version\s*=\s*"[^"]*"',
+        r'(?m)^version\s*=\s*"[^"]*"',
         f'version = "{version}"',
     )
     update_file(

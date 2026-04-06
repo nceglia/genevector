@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Bump version across pyproject.toml, Cargo.toml, and docs/conf.py."""
 
+import os
 import re
 import sys
 
@@ -43,11 +44,14 @@ def main():
         r"release\s*=\s*'[^']*'",
         f"release = '{version}'",
     )
-    update_file(
-        "setup.py",
-        r"version\s*=\s*'[^']*'",
-        f"version='{version}'",
-    )
+    if os.path.exists("setup.py"):
+        update_file(
+            "setup.py",
+            r"version\s*=\s*'[^']*'",
+            f"version='{version}'",
+        )
+    else:
+        print("  setup.py: skipped (not found)")
 
     print(f"\nDone. Now run:")
     print(f"  git add -A")

@@ -1,3 +1,5 @@
+"""GeneVector neural embedding model for gene co-expression learning."""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -37,6 +39,19 @@ class GeneVectorModel(nn.Module):
     """
 
     def __init__(self, num_embeddings, embedding_dim, gain=1., init_ortho=True):
+        """Initialize the embedding model.
+
+        Parameters
+        ----------
+        num_embeddings : int
+            Number of genes (vocabulary size).
+        embedding_dim : int
+            Dimension of gene embedding vectors.
+        gain : float
+            Scale factor for orthogonal weight initialization.
+        init_ortho : bool
+            If True, use orthogonal initialization. Otherwise uniform(-1, 1).
+        """
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
         super(GeneVectorModel, self).__init__()
@@ -50,12 +65,37 @@ class GeneVectorModel(nn.Module):
             self.wj.weight.data.uniform_(-1,1)
 
     def forward(self, i_indices, j_indices):
+        """Compute dot product between gene embedding pairs.
+
+        Parameters
+        ----------
+        i_indices : torch.LongTensor
+            Indices for first gene in each pair.
+        j_indices : torch.LongTensor
+            Indices for second gene in each pair.
+
+        Returns
+        -------
+        torch.Tensor
+            Dot product scores for each gene pair.
+        """
         w_i = self.wi(i_indices)
         w_j = self.wj(j_indices)
         x = torch.sum(w_i * w_j, dim=1)
         return x
 
     def save_embedding(self, id2word, file_name, layer):
+        """Save embedding weights to a .vec text file.
+
+        Parameters
+        ----------
+        id2word : dict
+            Mapping from gene index to gene symbol.
+        file_name : str
+            Output file path.
+        layer : int
+            0 for input weights (wi), 1 for output weights (wj).
+        """
         if layer == 0:
             embedding = self.wi.weight.cpu().data.numpy()
         else:
@@ -178,13 +218,36 @@ class GeneVector(object):
         self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name.replace(".vec","2.vec"), 1)
 
     def save(self, filepath):
+        """Save model state dict to file.
+
+        Parameters
+        ----------
+        filepath : str
+            Output file path.
+        """
         torch.save(self.model.state_dict(), filepath)
 
     def load(self, filepath):
+        """Load model state dict from file.
+
+        Parameters
+        ----------
+        filepath : str
+            Path to saved model state dict.
+        """
         self.gnn.load_state_dict(torch.load(filepath))
         self.gnn.eval()
 
     def plot(self, fname=None, log=False):
+        """Plot training loss curve.
+
+        Parameters
+        ----------
+        fname : str, optional
+            File path to save figure.
+        log : bool
+            If True, use log scale for x-axis.
+        """
         fig, ax = plt.subplots(1,1,figsize=(12,5),facecolor='#FFFFFF')
         ax.plot(self.mean_loss_values, color="purple")
         ax.set_ylabel('Loss')

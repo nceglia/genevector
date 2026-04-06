@@ -353,6 +353,23 @@ def register_target(name):
 
 
 def get_target_function(name):
+    """Look up a registered target function by name.
+
+    Parameters
+    ----------
+    name : str
+        Name of the registered target.
+
+    Returns
+    -------
+    callable
+        The target function.
+
+    Raises
+    ------
+    ValueError
+        If name is not registered.
+    """
     if name not in TARGETS:
         available = ", ".join(sorted(TARGETS.keys()))
         raise ValueError(f"Unknown target '{name}'. Available: {available}")

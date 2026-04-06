@@ -1,3 +1,5 @@
+"""Gene and cell embedding classes for downstream analysis and visualization."""
+
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import MinMaxScaler
 import seaborn as sns
@@ -79,6 +81,18 @@ class GeneEmbedding(object):
             self.genes.append(gene)
 
     def read_embedding(self, filename):
+        """Read a .vec embedding file into a dict of gene -> vector.
+
+        Parameters
+        ----------
+        filename : str
+            Path to .vec file (first line: dimensions, remaining: gene vectors).
+
+        Returns
+        -------
+        dict
+            Mapping from gene symbol to numpy array.
+        """
         embedding = dict()
         lines = open(filename,"r").read().splitlines()[1:]
         for line in lines:
@@ -161,6 +175,18 @@ class GeneEmbedding(object):
         plt.tight_layout()
 
     def get_vector(self, gene):
+        """Return the embedding vector for a single gene.
+
+        Parameters
+        ----------
+        gene : str
+            Gene symbol.
+
+        Returns
+        -------
+        np.ndarray
+            Embedding vector.
+        """
         return self.embeddings[gene]
 
     def plot_metagenes_scores(self, adata, metagenes, column, plot=None):
@@ -559,6 +585,20 @@ class CellEmbedding(object):
     
     @staticmethod
     def get_expression(adata, gene):
+        """Extract expression values for a single gene from an AnnData object.
+
+        Parameters
+        ----------
+        adata : AnnData
+            Annotated data matrix.
+        gene : str
+            Gene symbol.
+
+        Returns
+        -------
+        list
+            Expression values for all cells.
+        """
         return adata.X[:,adata.var.index.tolist().index(gene)].T.todense().tolist()[0]
 
     def compare_expression_to_similarity(self, adata, gene):

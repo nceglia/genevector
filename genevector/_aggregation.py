@@ -17,6 +17,24 @@ def register_aggregation(name):
 
 
 def get_aggregation(name):
+    """Look up a registered aggregation function by name, or return a callable directly.
+
+    Parameters
+    ----------
+    name : str or callable
+        Name of registered aggregation, or a callable with signature
+        ``f(X_dense, graph, **params) -> np.ndarray``.
+
+    Returns
+    -------
+    callable
+        The aggregation function.
+
+    Raises
+    ------
+    ValueError
+        If name is a string and not registered.
+    """
     if callable(name):
         return name
     if name not in AGGREGATIONS:
@@ -28,6 +46,18 @@ def get_aggregation(name):
 # ─── Helpers ──────────────────────────────────────────────────
 
 def _row_normalize(graph):
+    """Row-normalize a sparse adjacency matrix so each row sums to 1.
+
+    Parameters
+    ----------
+    graph : scipy.sparse matrix
+        Adjacency matrix. Zero-degree rows are left as zeros.
+
+    Returns
+    -------
+    scipy.sparse matrix
+        Row-normalized adjacency.
+    """
     row_sums = np.asarray(graph.sum(axis=1)).ravel()
     row_sums[row_sums == 0] = 1.0
     D_inv = diags(1.0 / row_sums)
@@ -35,6 +65,18 @@ def _row_normalize(graph):
 
 
 def _to_dense(X):
+    """Convert sparse or dense matrix to dense float64 numpy array.
+
+    Parameters
+    ----------
+    X : scipy.sparse matrix or np.ndarray
+        Input matrix.
+
+    Returns
+    -------
+    np.ndarray
+        Dense array with dtype float64.
+    """
     if issparse(X):
         return np.asarray(X.todense(), dtype=np.float64)
     return np.asarray(X, dtype=np.float64)
@@ -44,6 +86,22 @@ def _to_dense(X):
 
 @register_aggregation("mean")
 def aggr_mean(X_dense, graph, include_self=False, **kwargs):
+    """Mean aggregation over graph neighbors.
+
+    Parameters
+    ----------
+    X_dense : np.ndarray
+        Expression matrix (cells x genes).
+    graph : scipy.sparse matrix
+        Adjacency matrix (any graph topology).
+    include_self : bool
+        If True, blend 50/50 between self and neighbor mean.
+
+    Returns
+    -------
+    np.ndarray
+        Aggregated expression, same shape as X_dense.
+    """
     W = _row_normalize(graph)
     neighbor_mean = W @ X_dense
     if include_self:

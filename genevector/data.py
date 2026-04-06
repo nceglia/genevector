@@ -1,3 +1,5 @@
+"""GeneVector dataset and expression context for single-cell data."""
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -154,7 +156,7 @@ class GeneVectorDataset(Dataset):
             If True, multiply MI by correlation sign for directional MI.
         target : str or callable
             Name of registered target function, or a callable with
-            signature f(X, gene_names, **kwargs) -> dict[dict[float]].
+            signature ``f(X, gene_names, **kwargs) -> dict[dict[float]]``.
             Default: "mi" (mutual information).
         target_kwargs : dict, optional
             Extra keyword arguments passed to the target function.
@@ -391,6 +393,13 @@ class GeneVectorDataset(Dataset):
         return joint_dist
 
     def create_inputs_outputs(self, c=100.):
+        """Compute target scores, build training tensors, and prepare for model training.
+
+        Parameters
+        ----------
+        c : float
+            Scaling factor applied to target scores (score * c^2).
+        """
         print(bcolors.WARNING + "*****************" + bcolors.ENDC)
         print(bcolors.HEADER + "Loading Dataset." + bcolors.ENDC)
         print(bcolors.WARNING + "*****************\n" + bcolors.ENDC)
@@ -461,6 +470,18 @@ class GeneVectorDataset(Dataset):
             self._xij = torch.FloatTensor(xij).to(self.device)
     
     def get_batches(self, batch_size):
+        """Yield randomized mini-batches of (target_values, i_indices, j_indices).
+
+        Parameters
+        ----------
+        batch_size : int
+            Number of gene pairs per batch.
+
+        Yields
+        ------
+        tuple of (torch.Tensor, torch.Tensor, torch.Tensor)
+            Target values, row gene indices, column gene indices.
+        """
         if self.device == "cuda":
             rand_ids = torch.cuda.LongTensor(np.random.choice(len(self._xij), len(self._xij), replace=False))
         else:

@@ -45,6 +45,18 @@ def compute_cache_key(X, gene_names, target_name, target_kwargs, signed_mi):
 
 
 def get_cache_path(cache_key):
+    """Return filesystem path for a cache key, creating the directory if needed.
+
+    Parameters
+    ----------
+    cache_key : str
+        Hash key identifying the cached computation.
+
+    Returns
+    -------
+    str
+        Full path to the .npz cache file.
+    """
     os.makedirs(CACHE_DIR, exist_ok=True)
     return os.path.join(CACHE_DIR, f"scores_{cache_key}.npz")
 

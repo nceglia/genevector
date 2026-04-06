@@ -1,0 +1,225 @@
+/* ─── Monokai Dark Theme for GeneVector Docs ─── */
+
+/* Main background */
+body,
+.wy-body-for-nav {
+    background-color: #272822;
+}
+
+/* Content area */
+.wy-nav-content-wrap {
+    background-color: #272822;
+}
+
+.wy-nav-content {
+    background-color: #272822;
+    color: #f8f8f2;
+    max-width: 900px;
+}
+
+/* Sidebar */
+.wy-side-nav-search {
+    background-color: #1e1f1a;
+}
+
+.wy-side-nav-search input[type="text"] {
+    border-color: #49483e;
+    background-color: #3e3d32;
+    color: #f8f8f2;
+}
+
+.wy-menu-vertical {
+    background-color: #1e1f1a;
+}
+
+.wy-menu-vertical a {
+    color: #f8f8f2;
+}
+
+.wy-menu-vertical a:hover {
+    background-color: #49483e;
+    color: #a6e22e;
+}
+
+.wy-menu-vertical li.current > a {
+    background-color: #49483e;
+    color: #a6e22e;
+    border-left: 3px solid #a6e22e;
+}
+
+.wy-menu-vertical li.current {
+    background-color: #1e1f1a;
+}
+
+.wy-menu-vertical li.toctree-l2.current > a,
+.wy-menu-vertical li.toctree-l2.current li.toctree-l3 > a {
+    background-color: #2e2f2a;
+}
+
+.wy-side-nav-search > a img.logo {
+    max-width: 200px;
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+    color: #a6e22e !important;
+    font-weight: 600;
+}
+
+h1 { border-bottom: 2px solid #49483e; padding-bottom: 0.3em; }
+h2 { border-bottom: 1px solid #49483e; padding-bottom: 0.2em; }
+
+/* Links */
+a {
+    color: #66d9ef;
+}
+
+a:hover {
+    color: #a6e22e;
+}
+
+a:visited {
+    color: #ae81ff;
+}
+
+/* Code */
+code,
+.rst-content code.literal {
+    background-color: #3e3d32;
+    color: #e6db74;
+    border: 1px solid #49483e;
+    padding: 2px 5px;
+    border-radius: 3px;
+}
+
+/* Code blocks */
+.rst-content div[class^="highlight"],
+.rst-content pre.literal-block {
+    background-color: #3e3d32 !important;
+    border: 1px solid #49483e;
+    border-radius: 4px;
+}
+
+.rst-content div[class^="highlight"] pre {
+    color: #f8f8f2;
+}
+
+/* Tables */
+.rst-content table.docutils {
+    border-color: #49483e;
+}
+
+.rst-content table.docutils thead {
+    background-color: #3e3d32;
+}
+
+.rst-content table.docutils thead th {
+    color: #a6e22e;
+    border-color: #49483e;
+}
+
+.rst-content table.docutils td {
+    border-color: #49483e;
+    color: #f8f8f2;
+}
+
+.rst-content table.docutils tr:nth-child(even) {
+    background-color: #2e2f2a;
+}
+
+.rst-content table.docutils tr:nth-child(odd) {
+    background-color: #272822;
+}
+
+/* Admonitions (notes, warnings) */
+.rst-content .note {
+    background-color: #2e2f2a;
+    border-left: 4px solid #66d9ef;
+}
+
+.rst-content .note .admonition-title {
+    background-color: #3e3d32;
+    color: #66d9ef;
+}
+
+.rst-content .warning {
+    background-color: #2e2f2a;
+    border-left: 4px solid #f92672;
+}
+
+.rst-content .warning .admonition-title {
+    background-color: #3e3d32;
+    color: #f92672;
+}
+
+.rst-content .tip {
+    background-color: #2e2f2a;
+    border-left: 4px solid #a6e22e;
+}
+
+.rst-content .tip .admonition-title {
+    background-color: #3e3d32;
+    color: #a6e22e;
+}
+
+/* API autodoc */
+.rst-content dl.py dt {
+    background-color: #3e3d32;
+    border-top: 2px solid #f92672;
+    color: #f8f8f2;
+    padding: 6px 8px;
+}
+
+.rst-content dl.py dt .sig-name {
+    color: #a6e22e;
+}
+
+.rst-content dl.py dt .sig-param {
+    color: #fd971f;
+}
+
+.rst-content dl.py dd {
+    border-left: 2px solid #49483e;
+    padding-left: 16px;
+}
+
+/* Field lists (Parameters, Returns, etc.) */
+.rst-content .field-list dt {
+    color: #66d9ef;
+}
+
+/* Footer */
+footer {
+    color: #75715e;
+}
+
+footer a {
+    color: #66d9ef;
+}
+
+/* Breadcrumbs */
+.wy-breadcrumbs li a {
+    color: #66d9ef;
+}
+
+/* Search highlight */
+.rst-content .highlighted {
+    background-color: #e6db74;
+    color: #272822;
+}
+
+/* Mobile nav */
+.wy-nav-top {
+    background-color: #1e1f1a;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    background-color: #272822;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: #49483e;
+    border-radius: 4px;
+}

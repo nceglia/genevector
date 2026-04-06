@@ -30,6 +30,8 @@ napoleon_google_docstring = False
 napoleon_numpy_docstring = True
 napoleon_include_init_with_doc = True
 
+pygments_style = 'monokai'
+
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 add_module_names = False
@@ -41,3 +43,9 @@ add_module_names = False
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 html_logo = "../logo.png"
+html_css_files = ['custom.css']
+html_theme_options = {
+    'style_nav_header_background': '#1e1f1a',
+    'collapse_navigation': False,
+    'navigation_depth': 3,
+}

@@ -26,8 +26,8 @@ jobs:
           pip install maturin
           maturin build --release
           pip install target/wheels/*.whl
-          pip install pytest numpy scipy scikit-learn torch --index-url https://download.pytorch.org/whl/cpu
-          pip install scanpy anndata tqdm seaborn matplotlib pandas leidenalg umap-learn scikit-misc
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install pytest numpy scipy scikit-learn scanpy anndata tqdm seaborn matplotlib pandas leidenalg umap-learn scikit-misc
 
       - name: Run tests
         run: pytest tests/ -v

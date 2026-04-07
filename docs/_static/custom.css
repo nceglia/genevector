@@ -171,24 +171,37 @@ code,
 }
 
 /* API autodoc */
-.rst-content dl.py dt {
-    background-color: #3e3d32;
-    border-top: 2px solid #f92672;
+.rst-content dl.py dt,
+.rst-content dl.py dt.sig {
+    background-color: #000000 !important;
+    border: 1px solid #a6e22e !important;
+    border-top: 2px solid #a6e22e !important;
+    border-left: 4px solid #a6e22e !important;
     color: #f8f8f2;
-    padding: 6px 8px;
+    padding: 8px 12px;
+    border-radius: 3px;
 }
 
-.rst-content dl.py dt .sig-name {
+.rst-content dl.py dt .sig-name,
+.rst-content dl.py dt .descname,
+.rst-content dl.py dt .property {
     color: #a6e22e;
 }
 
-.rst-content dl.py dt .sig-param {
+.rst-content dl.py dt .sig-param,
+.rst-content dl.py dt em.property {
     color: #fd971f;
+}
+
+.rst-content dl.py dt .sig-prename,
+.rst-content dl.py dt .sig-paren {
+    color: #f8f8f2;
 }
 
 .rst-content dl.py dd {
     border-left: 2px solid #49483e;
     padding-left: 16px;
+    background-color: transparent;
 }
 
 /* Field lists (Parameters, Returns, etc.) */

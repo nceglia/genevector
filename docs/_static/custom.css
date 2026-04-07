@@ -106,29 +106,37 @@ code,
 
 /* Tables */
 .rst-content table.docutils {
-    border-color: #49483e;
+    border-color: #fd971f;
 }
 
 .rst-content table.docutils thead {
-    background-color: #3e3d32;
+    background-color: #000000;
 }
 
 .rst-content table.docutils thead th {
     color: #a6e22e;
-    border-color: #49483e;
+    border-color: #fd971f;
+    background-color: #000000;
 }
 
 .rst-content table.docutils td {
-    border-color: #49483e;
+    border-color: #fd971f;
     color: #f8f8f2;
+    background-color: #000000;
 }
 
-.rst-content table.docutils tr:nth-child(even) {
-    background-color: #2e2f2a;
+.rst-content table.docutils tr {
+    background-color: #000000;
 }
 
+.rst-content table.docutils tr:nth-child(even),
 .rst-content table.docutils tr:nth-child(odd) {
-    background-color: #272822;
+    background-color: #000000;
+}
+
+.wy-table-responsive table td,
+.wy-table-responsive table th {
+    background-color: #000000 !important;
 }
 
 /* Admonitions (notes, warnings) */

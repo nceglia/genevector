@@ -2,23 +2,32 @@
 """
 Interactive exploration of GeneVector spatial benchmark results.
 
-Reads artifacts from a prior `python scripts/run_spatial_benchmark.py --seed 42` run
-(default 3000 epochs, full 10k-cell FOV1, all 5 variants) under
-`benchmarks_artifacts/spatial/seed_42/`. Walks through:
+Loads (or trains) artifacts under `benchmarks_artifacts/spatial/seed_42/` and
+walks through:
 
-  1. Sanity-check the dataset — confirm phenotype labels, marker layout,
-     ground-truth coverage.
-  2. Inspect each gene embedding by variant.
-  3. Reproduce the eval pipeline cell-by-cell so the failure modes are
-     visible inline (paracrine AUC < 0.5; T_rare F1 = 0).
-  4. Provide handles for tweaking — alternative pair selection, alternative
-     marker dicts, alternative similarity scoring.
+  1. Train fresh (optional) or load existing artifacts.
+  2. Sanity-check the dataset — confirm phenotype labels, marker layout, ground-truth coverage.
+  3. Inspect each gene embedding by variant.
+  4. Reproduce the eval pipeline cell-by-cell so the failure modes are visible inline
+     (paracrine AUC < 0.5; T_rare F1 = 0).
+  5. Provide handles for tweaking — alternative pair selection, alternative marker dicts,
+     alternative similarity scoring, alternative training hyperparameters.
 
 Run interactively: open in VS Code / Cursor and execute cells via `#%%`.
 """
 
+# Toggle to retrain from scratch into a scratch dir. False = read existing artifacts.
+RETRAIN = False
 ARTIFACTS_ROOT = "benchmarks_artifacts/spatial"
 SEED = 42
+
+# Training overrides applied only when RETRAIN = True.
+TRAIN_OVERRIDES = {
+    "epochs": 3000,
+    "emb_dimension": 64,
+    "num_cells": 10000,    # full FOV1; reduce for faster iteration
+    "n_neighs": 6,
+}
 
 
 # %% Cell 1 — Imports + paths
@@ -34,31 +43,66 @@ from scipy import sparse
 from sklearn.metrics.pairwise import cosine_similarity
 
 seed_dir = Path(ARTIFACTS_ROOT) / f"seed_{SEED}"
-if not seed_dir.exists():
+if not RETRAIN and not seed_dir.exists():
     raise FileNotFoundError(
         f"Missing artifacts dir: {seed_dir}\n"
         f"Run the benchmark first:\n"
-        f"  python scripts/run_spatial_benchmark.py --seed {SEED}"
+        f"  python scripts/run_spatial_benchmark.py --seed {SEED}\n"
+        f"…or set RETRAIN = True at the top of this notebook."
     )
 
 print(f"Artifacts root: {seed_dir}")
-print(f"Files present : {sorted(p.name for p in seed_dir.iterdir())}")
+if seed_dir.exists():
+    print(f"Files present : {sorted(p.name for p in seed_dir.iterdir())}")
+else:
+    print("Files present : (none yet — Cell 2 will retrain)")
+
+
+# %% [markdown]
+# # Optional: retrain all variants from scratch
+#
+# When `RETRAIN = True`, runs the full benchmark harness with `TRAIN_OVERRIDES` applied.
+# This calls the same code path as `scripts/run_spatial_benchmark.py` so the artifacts are
+# byte-identical to a CLI run. Takes ~12s for the default 5 variants × 3000 epochs at 10k cells.
+#
+# Useful for trying different hyperparameters (smaller `emb_dimension`, fewer epochs, alternative
+# `n_neighs`) without leaving the notebook. Set `num_cells` smaller to iterate faster.
+#
+# Skipped entirely when `RETRAIN = False`.
+
+# %% Cell 2 — Optional retrain
+if RETRAIN:
+    from genevector.benchmarks.spatial import BenchmarkConfig, run_benchmark
+
+    layout_kwargs = {"num_cells": TRAIN_OVERRIDES["num_cells"]}
+    config = BenchmarkConfig(
+        seed=SEED,
+        epochs=TRAIN_OVERRIDES["epochs"],
+        emb_dimension=TRAIN_OVERRIDES["emb_dimension"],
+        n_neighs=TRAIN_OVERRIDES["n_neighs"],
+        layout_kwargs=layout_kwargs,
+        output_root=ARTIFACTS_ROOT,
+    )
+    manifest = run_benchmark(config)
+    print(json.dumps(manifest, indent=2, sort_keys=True, default=str))
+else:
+    print(f"Loading existing artifacts from {seed_dir}")
 
 
 # %% [markdown]
 # # Load all artifacts
 #
 # We loaded:
-#   - `adata.h5ad` — the synthetic FOV with 23 diagnostic genes overlaid (LIG/REC/NICHE/TRARE/HK)
+#   - `adata.h5ad` — synthetic FOV with 23 diagnostic genes overlaid (LIG/REC/NICHE/TRARE/HK)
 #     and T cells split into T_stromal/T_intratumoral/T_rare by local tumor density.
-#   - `ground_truth.json` — the diagnostic schema (paracrine pairs, niche/trare/HK gene lists, T-subtype counts).
+#   - `ground_truth.json` — diagnostic schema (paracrine pairs, niche/trare/HK gene lists, T-subtype counts).
 #   - `graph_real.npz`, `graph_shuffled.npz` — spatial connectivity (real k-NN at radius 1.5) and
 #     a degree-preserving shuffle. The shuffled graph is the critical control: if `graph_xcorr` wins
 #     persist under shuffling, the spatial structure isn't the source.
 #   - `embedding_{variant}.vec` for each of {mi, pearson, spearman, graph_xcorr, graph_xcorr_shuffled}.
 #   - `meta_{variant}.json` — final loss, wall time, epochs run per variant.
 
-# %% Cell 2 — Load artifacts
+# %% Cell 3 — Load artifacts
 def _read_vec_file(path: Path) -> dict[str, np.ndarray]:
     out = {}
     lines = path.read_text().splitlines()
@@ -118,7 +162,7 @@ print(f"Graph real nnz  : {graph_real.nnz}, shuffled nnz: {graph_shuffled.nnz}")
 # Also confirm that T_stromal / T_intratumoral / T_rare are present and non-trivially populated.
 # T_rare = 0 cells would explain the F1[T_rare] = 0 across all variants except the noisy shuffled.
 
-# %% Cell 3 — Sanity-check phenotype labels and obs columns
+# %% Cell 4 — Sanity-check phenotype labels and obs columns
 print("obs columns:", adata.obs.columns.tolist())
 print()
 print("phenotype value_counts:")
@@ -159,7 +203,7 @@ for t in t_subs:
 # computed against `n_paracrine = 0` pairs, which is meaningless. Worth confirming for
 # all 23 overlay genes × 5 variants before reading anything into the AUC numbers.
 
-# %% Cell 4 — Confirm overlay genes are in the embedding
+# %% Cell 5 — Confirm overlay genes are in the embedding
 overlay_genes = list(gt["added_gene_names"])
 
 coverage = pd.DataFrame(
@@ -210,7 +254,7 @@ for v in variants:
 # in collapsed space are noisy. The shuffled control's wins on niche/F1 are likely artifacts of
 # this collapse rather than evidence the shuffled graph "learned" something.
 
-# %% Cell 5 — Loss curves and convergence
+# %% Cell 6 — Loss curves and convergence
 meta_df = pd.DataFrame(
     [
         {
@@ -234,7 +278,7 @@ print(meta_df.to_string())
 #   - distribution of `||v_i||` across genes (mean, std)
 #   - mean pairwise cosine similarity (collapsed → near 1; healthy → centered around 0)
 
-# %% Cell 6 — Vector norm distributions per variant
+# %% Cell 7 — Vector norm distributions per variant
 collapse_rows = []
 for v in variants:
     vecs = np.stack(list(embeddings_by_variant[v].values()), axis=0)
@@ -287,7 +331,7 @@ plt.show()
 # Direct check below: compute the cosine similarity for each LIG_i / REC_i pair across all
 # variants. Negative numbers near -1 confirm anti-correlation.
 
-# %% Cell 7 — Paracrine pair similarities, by hand
+# %% Cell 8 — Paracrine pair similarities, by hand
 def _pair_cos(vecs: dict[str, np.ndarray], a: str, b: str) -> float:
     if a not in vecs or b not in vecs:
         return float("nan")
@@ -348,7 +392,7 @@ plt.show()
 # We score NICHE_i against the LIG_i genes (Tumor markers by construction). Each NICHE_i has 5
 # possible "target" Tumor markers, so 5 × 5 = 25 ground-truth pairs.
 
-# %% Cell 8 — Niche-gene similarity to tumor markers
+# %% Cell 9 — Niche-gene similarity to tumor markers
 niches = [n["gene"].upper() for n in gt["niche_genes"]]
 ligs = [p["ligand"].upper() for p in gt["paracrine_pairs"]]
 
@@ -387,9 +431,9 @@ plt.show()
 # # Why is F1[T_rare] zero for every variant except the noisy shuffled?
 #
 # Three possibilities:
-#   (a) T_rare cells are too few to score (look at counts in cell 3).
+#   (a) T_rare cells are too few to score (look at counts in cell 4).
 #   (b) The marker dict for T_rare doesn't actually distinguish them — TRARE_0..TRARE_2 may not
-#       be making it through `_build_marker_dict` if the discovery heuristic fails (cell 3).
+#       be making it through `_build_marker_dict` if the discovery heuristic fails (cell 4).
 #   (c) `phenotype_probability` always assigns T_rare candidates to T_intratumoral or T_stromal
 #       because the shared T markers dominate over the 3 distinguishing TRARE genes.
 #
@@ -397,7 +441,7 @@ plt.show()
 # matrix on cells whose true label is T_rare. If the probability for T_rare is consistently
 # lower than for T_intratumoral, that's hypothesis (c).
 
-# %% Cell 9 — Per-cell phenotype probability inspection
+# %% Cell 10 — Per-cell phenotype probability inspection
 from genevector.benchmarks.spatial.eval import _build_marker_dict
 from genevector.data import GeneVectorDataset
 from genevector.embedding import CellEmbedding, GeneEmbedding
@@ -447,7 +491,7 @@ else:
 # (because `obs["cell_type"]` doesn't exist or has unexpected values), we get a degenerate
 # marker dict and every downstream F1 number is unreliable.
 
-# %% Cell 10 — Marker-dict diagnostics
+# %% Cell 11 — Marker-dict diagnostics
 from genevector.benchmarks.spatial.eval import _discover_grafiti_markers
 
 discovered = _discover_grafiti_markers(adata, gt)
@@ -474,10 +518,11 @@ for pheno, ms in markers.items():
 #     and re-run F1. If F1[T_rare] jumps from 0 to >0, the issue is marker dominance.
 #   - Try `method="softmax"` vs `"normalized_exponential"` with different temperatures.
 #     graph_xcorr embeddings may have a different similarity scale than mi.
-#   - Compute paracrine AUC at *multiple training checkpoints* (currently we only have epoch=3000).
-#     Maybe the embedding has the right structure at epoch 500 and over-trains by 3000.
+#   - Compute paracrine AUC at *multiple training checkpoints* by setting `RETRAIN = True` and
+#     varying `TRAIN_OVERRIDES["epochs"]` to 500, 1000, 2000, 3000. Maybe the embedding has the
+#     right structure at epoch 500 and over-trains by 3000.
 #   - Look at gene-pair similarities not via cosine but via Euclidean distance after normalizing.
 #     graph_xcorr's loss is MSE on raw scores, not cosine, so the geometry of the embedding may
 #     be better captured by Euclidean than cosine.
 
-# %% Cell 11 — Free-form scratch space
+# %% Cell 12 — Free-form scratch space

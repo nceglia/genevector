@@ -138,6 +138,28 @@ def test_run_benchmark_quick(tmp_path: Path):
     assert manifest["config"]["seed"] == SEED
 
 
+def test_quick_flag_does_not_override_explicit_epochs():
+    """Sub-task 029b: --quick is a defaults-preset, not a cap."""
+    import importlib.util
+
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "run_spatial_benchmark.py"
+    spec = importlib.util.spec_from_file_location("run_spatial_benchmark", script_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    args = mod._parse_args(["--quick", "--epochs", "1500"])
+    cfg = mod._build_config(args)
+    assert cfg.epochs == 1500
+    assert cfg.threshold == 1e-3  # threshold still preset since user didn't override
+    assert cfg.layout_kwargs == {"num_cells": 300}
+
+    args2 = mod._parse_args(["--quick"])
+    cfg2 = mod._build_config(args2)
+    assert cfg2.epochs == 20
+    assert cfg2.threshold == 1e-3
+    assert cfg2.layout_kwargs == {"num_cells": 300}
+
+
 @pytest.mark.slow
 def test_run_benchmark_full(tmp_path: Path):
     cfg = BenchmarkConfig(

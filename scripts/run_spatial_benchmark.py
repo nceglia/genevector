@@ -60,6 +60,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+_DEFAULTS = {"epochs": 3000, "threshold": 1e-6, "num_cells": None}
+
+
 def _build_config(args: argparse.Namespace) -> BenchmarkConfig:
     layout_kwargs: dict | None = None
     epochs = args.epochs
@@ -67,9 +70,12 @@ def _build_config(args: argparse.Namespace) -> BenchmarkConfig:
     num_cells = args.num_cells
 
     if args.quick:
-        num_cells = 300 if num_cells is None else num_cells
-        epochs = min(epochs, 20)
-        threshold = max(threshold, 1e-3)
+        if num_cells == _DEFAULTS["num_cells"]:
+            num_cells = 300
+        if args.epochs == _DEFAULTS["epochs"]:
+            epochs = 20
+        if args.threshold == _DEFAULTS["threshold"]:
+            threshold = 1e-3
 
     if num_cells is not None:
         layout_kwargs = {"num_cells": num_cells}

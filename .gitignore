@@ -136,3 +136,6 @@ Cargo.lock
 *.pyd
 
 spatial_spec.txt
+
+# Benchmark artifacts
+benchmarks_artifacts/

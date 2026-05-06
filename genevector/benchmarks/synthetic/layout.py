@@ -6,6 +6,8 @@ marker-assignment logic only. Preprocessing and plotting helpers are
 intentionally excluded.
 """
 
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 import anndata

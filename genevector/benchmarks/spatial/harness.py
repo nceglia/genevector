@@ -70,7 +70,7 @@ class BenchmarkConfig:
     device : str
         Torch device for training.
     n_neighs : int
-        Spatial graph k for the squidpy k-NN graph.
+        Spatial graph k for the symmetric k-NN graph on ``obsm['spatial']``.
     layout_kwargs : dict, optional
         Overrides for :func:`build_pathology`'s layout step.
     overlay_kwargs : dict, optional
@@ -109,18 +109,14 @@ def _resolve_variant(variant: str) -> tuple[str, str]:
 
 def _build_spatial_graph(adata, n_neighs: int = 6) -> sparse.csr_matrix:
     """Symmetric k-NN spatial connectivity graph from ``adata.obsm['spatial']``."""
-    import squidpy as sq
+    from sklearn.neighbors import kneighbors_graph
 
-    sq.gr.spatial_neighbors(
-        adata,
-        spatial_key="spatial",
-        coord_type="generic",
-        n_neighs=n_neighs,
-    )
-    conn = adata.obsp["spatial_connectivities"]
-    A = sparse.csr_matrix(conn).astype(np.float64)
-    # squidpy's k-NN connectivities are not symmetric; take the union to
-    # produce an undirected adjacency.
+    coords = np.asarray(adata.obsm["spatial"], dtype=np.float64)
+    A = kneighbors_graph(
+        coords, n_neighbors=n_neighs, mode="connectivity", include_self=False
+    ).astype(np.float64)
+    # k-NN connectivities are directional; symmetrize via union so the graph
+    # is undirected.
     A_sym = A.maximum(A.T)
     return sparse.csr_matrix(A_sym).astype(np.float64)
 

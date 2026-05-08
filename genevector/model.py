@@ -8,17 +8,9 @@ import numpy as np
 import numpy
 import matplotlib.pyplot as plt
 from .embedding import GeneEmbedding
+from ._logging import get_logger
 
-class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKCYAN = '\033[96m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+logger = get_logger(__name__)
 
 class GeneVectorModel(nn.Module):
     """
@@ -201,19 +193,16 @@ class GeneVector(object):
             self.mean_loss_values.append(numpy.mean(self.loss_values[-10:]))
             curr_loss = numpy.mean(self.loss_values[-10:])
             if self.epoch % int(update_interval) == 0:
-                print(bcolors.OKGREEN + "**** Epoch" + bcolors.ENDC,
-                    self.epoch, 
-                    bcolors.HEADER+"\tLoss:"+bcolors.ENDC,
-                    round(np.mean(self.loss_values[-30:]),5))
+                logger.info(f"Epoch {self.epoch} loss: {round(np.mean(self.loss_values[-30:]), 5)}")
             if type(threshold) == float and abs(curr_loss - last_loss) < threshold:
-                print(bcolors.OKCYAN + "Training complete!" + bcolors.ENDC)
+                logger.info("Training complete!")
                 self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name, 0)
                 self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name.replace(".vec","2.vec"), 1)
 
                 return
             last_loss = curr_loss
             self.epoch += 1
-        print(bcolors.WARNING+"Saving model..."+bcolors.ENDC)
+        logger.info("Saving model...")
         self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name, 0)
         self.model.save_embedding(self.dataset.data.id2gene, self.output_file_name.replace(".vec","2.vec"), 1)
 

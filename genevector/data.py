@@ -14,16 +14,9 @@ from scipy.stats import entropy
 from sklearn import feature_extraction
 import pandas
 
-class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKCYAN = '\033[96m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+from ._logging import get_logger
+
+logger = get_logger(__name__)
 
 class Context(object):
 
@@ -52,7 +45,7 @@ class Context(object):
                     context.metadata[column] = [x.decode("utf-8") for x in context.metadata[column]]
         except Exception as e:
             pass
-        print("Running...")
+        logger.info("Running...")
         context.cells = context.adata.obs.index
         context.cell_index, context.index_cell = Context.index_cells(context.cells)
         if load_expression:
@@ -60,7 +53,7 @@ class Context(object):
                                             context.genes, \
                                             context.cells)
         else:
-            print("Skipping expression load.")
+            logger.info("Skipping expression load.")
         context.gene_index, context.index_gene = Context.index_geneset(adata.var.index.tolist())
         context.gene2id = context.gene_index
         context.id2gene = context.index_gene
@@ -92,18 +85,18 @@ class Context(object):
         index_gene = numpy.array(genes)
         data = collections.defaultdict(list)
         self.expression = collections.defaultdict(dict)
-        print(bcolors.OKGREEN + "Loading Expression." + bcolors.ENDC)
+        logger.info("Loading Expression.")
         normalized_matrix.eliminate_zeros()
         row_indices, column_indices = normalized_matrix.nonzero()
         nonzero_values = normalized_matrix.data
-        print(bcolors.BOLD+"Indexing expression."+bcolors.ENDC)
+        logger.info("Indexing expression.")
         entries = list(zip(nonzero_values, row_indices, column_indices))
         for value, i, j in tqdm.tqdm(entries):
             barcode = cells[i]
             symbol = index_gene[j]
             self.expression[barcode][symbol] = value
             data[symbol].append(barcode)
-        print(bcolors.OKGREEN+"Finished."+bcolors.ENDC)
+        logger.info("Finished.")
         return data
 
     def serialize(self):
@@ -216,11 +209,11 @@ class GeneVectorDataset(Dataset):
         :rtype: anndata.AnnData
         """
         adata.var_names_make_unique()
-        print(bcolors.BOLD + "Removing Genes..."+ bcolors.ENDC)
+        logger.info("Removing Genes...")
         gene_entropy = GeneVectorDataset.get_gene_entropy(adata)
         vgenes = [x for x,y in gene_entropy.items() if y > entropy_threshold]
         adata = adata[:,vgenes]
-        print(bcolors.OKGREEN + "Selecting {} Genes with greater than {} nats entropy.".format(len(vgenes), entropy_threshold)+ bcolors.ENDC)
+        logger.info(f"Selecting {len(vgenes)} Genes with greater than {entropy_threshold} nats entropy.")
         return adata.copy()
 
     def load_targets(self, targets):
@@ -252,7 +245,7 @@ class GeneVectorDataset(Dataset):
 
     def _generate_mi_scores_legacy(self):
         """Legacy MI computation (kept for reference/testing)."""
-        print(bcolors.OKGREEN + "Getting gene pairs combinations." + bcolors.ENDC)
+        logger.info("Getting gene pairs combinations.")
         mi_scores = collections.defaultdict(lambda : collections.defaultdict(float))
         bcs = dict()
         vgenes = []
@@ -266,7 +259,7 @@ class GeneVectorDataset(Dataset):
         for c, p in self.data.expression.items():
             for g,v in p.items():
                 counts[g][c] += int(v)
-        print(bcolors.OKGREEN + "Computing MI for each pair." + bcolors.ENDC)
+        logger.info("Computing MI for each pair.")
         for p1,p2 in tqdm.tqdm(pairs):
             common = bcs[p1].intersection(bcs[p2])
             if len(common) ==0: continue
@@ -312,10 +305,10 @@ class GeneVectorDataset(Dataset):
 
         # --- Compute ---
         if callable(self.target):
-            print(bcolors.OKGREEN + "Computing custom target scores." + bcolors.ENDC)
+            logger.info("Computing custom target scores.")
             self.mi_scores = self.target(X, gene_names, **self.target_kwargs)
         elif isinstance(self.target, str):
-            print(bcolors.OKGREEN + f"Computing '{self.target}' target scores." + bcolors.ENDC)
+            logger.info(f"Computing '{self.target}' target scores.")
             fn = get_target_function(self.target)
             kwargs = {
                 "signed": self.signed_mi,
@@ -341,9 +334,7 @@ class GeneVectorDataset(Dataset):
         c : float
             Scaling factor applied to target scores (score * c^2).
         """
-        print(bcolors.WARNING + "*****************" + bcolors.ENDC)
-        print(bcolors.HEADER + "Loading Dataset." + bcolors.ENDC)
-        print(bcolors.WARNING + "*****************\n" + bcolors.ENDC)
+        logger.info("Loading Dataset.")
 
         # --- Entropy ---
         entropy = self.get_gene_entropy(self.adata)
@@ -353,9 +344,9 @@ class GeneVectorDataset(Dataset):
         if self.mi_scores is None:
             self._compute_target_scores()
         else:
-            print(bcolors.OKCYAN + "Using preloaded target scores." + bcolors.ENDC)
+            logger.info("Using preloaded target scores.")
 
-        print(bcolors.FAIL + "Scores Loaded." + bcolors.ENDC)
+        logger.info("Scores Loaded.")
 
         # --- Rebuild gene index ---
         gene_index = {w: idx for (idx, w) in enumerate(self.data.genes)}
@@ -372,7 +363,7 @@ class GeneVectorDataset(Dataset):
         else:
             self._ent = torch.FloatTensor(ent).to(self.device)
 
-        print(bcolors.OKCYAN + "Ready to train." + bcolors.ENDC)
+        logger.info("Ready to train.")
 
     def _build_training_tensors(self, c=100.):
         """Build i_idx, j_idx, xij tensors using vectorized numpy ops."""

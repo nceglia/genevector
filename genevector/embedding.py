@@ -27,16 +27,9 @@ import pandas as pd
 import seaborn as sns
 from sklearn import preprocessing
 
-class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKCYAN = '\033[96m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+from ._logging import get_logger
+
+logger = get_logger(__name__)
 
 class GeneEmbedding(object):
 
@@ -57,16 +50,16 @@ class GeneEmbedding(object):
         if vector not in ("1","2","average"):
             raise ValueError("Select the weight vector from: ('1','2','average')")
         if vector == "average":
-            print("Loading average of 1st and 2nd weights.")
+            logger.info("Loading average of 1st and 2nd weights.")
             avg_embedding = embedding_file.replace(".vec","_avg.vec")
             secondary_weights = embedding_file.replace(".vec","2.vec")
             GeneEmbedding.average_vector_results(embedding_file,secondary_weights,avg_embedding)
             self.embeddings = self.read_embedding(avg_embedding)
         elif vector == "1":
-            print("Loading first weights.")
+            logger.info("Loading first weights.")
             self.embeddings = self.read_embedding(embedding_file)
         elif vector == "2":
-            print("Loading second weights.")
+            logger.info("Loading second weights.")
             secondary_weights = embedding_file.replace(".vec","2.vec")
             self.embeddings = self.read_embedding(secondary_weights)
         self.vector = []
@@ -467,7 +460,7 @@ class CellEmbedding(object):
         self.normalized_vectors = collections.defaultdict(list)
         self._initialize_normalized_vectors(adata_copy.X, genes, barcodes)
 
-        print(bcolors.OKGREEN + "Generating Cell Vectors." + bcolors.ENDC)
+        logger.info("Generating Cell Vectors.")
         cells_with_no_counts = 0
         # Ensure self.data keys are consistent with barcodes for which vectors are made
         temp_cell_vectors = {} # Store vectors before converting to self.matrix to ensure order
@@ -519,13 +512,13 @@ class CellEmbedding(object):
 
 
         if not self.matrix:
-             print(bcolors.WARNING + "No cell vectors were generated. self.matrix is empty." + bcolors.ENDC)
+             logger.warning("No cell vectors were generated. self.matrix is empty.")
              self.dataset_vector = numpy.zeros(self.embed.vector_size if hasattr(self.embed, "vector_size") else 100) # Default size
         else:
              self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
-        
-        print(f"Found {cells_with_no_counts} Cells with No Counts / No scorable gene expression.")
-        print(bcolors.BOLD + "Finished CellEmbedding Initialization." + bcolors.ENDC)
+
+        logger.info(f"Found {cells_with_no_counts} Cells with No Counts / No scorable gene expression.")
+        logger.info("Finished CellEmbedding Initialization.")
 
 
     def batch_correct(self, column, reference):
@@ -551,17 +544,17 @@ class CellEmbedding(object):
             batches[batch].append(vec)
         assert reference in batches, "Reference label not found."
         reference_vector = numpy.average(batches.pop(reference),axis=0)
-        print("Generating batch vectors.")
+        logger.info("Generating batch vectors.")
         for batch, vbatches in batches.items():
             if batch != reference:
                 batch_vec = numpy.average(vbatches, axis=0)
                 offset = numpy.subtract(reference_vector,batch_vec)
                 correction_vectors[batch] = offset
-                print("Computing correction vector for {}.".format(batch))
+                logger.info(f"Computing correction vector for {batch}.")
         corrected_matrix = []
         gc.collect()
         self.cell_order = []
-        print("Applying correction vectors.")
+        logger.info("Applying correction vectors.")
         for batch, xvec in zip(labels, self.matrix):
             if  batch != reference:
                 offset = correction_vectors[batch]
@@ -909,7 +902,7 @@ class CellEmbedding(object):
         The 'norm' parameter controls if both target_vec and cell vectors are L2 normalized before similarity calculation.
         """
         if not hasattr(self, 'adata') or self.adata is None:
-            print(bcolors.WARNING + "self.adata is not set. Call get_adata() first. Returning empty distances." + bcolors.ENDC)
+            logger.warning("self.adata is not set. Call get_adata() first. Returning empty distances.")
             return []
         
         # This map uses self.data.keys() and self.matrix from __init__
@@ -932,7 +925,7 @@ class CellEmbedding(object):
             cell_matrix_avg_vector = cell_id_to_matrix_vector_map.get(cell_id)
             
             if cell_matrix_avg_vector is None:
-                print(bcolors.WARNING + f"Cell ID {cell_id} from self.adata.obs.index not found in internal matrix map. Skipping." + bcolors.ENDC)
+                logger.warning(f"Cell ID {cell_id} from self.adata.obs.index not found in internal matrix map. Skipping.")
                 similarities.append(np.nan) # Or some other placeholder like 0.0
                 continue
 
@@ -976,13 +969,13 @@ class CellEmbedding(object):
         :rtype: anndata.AnnData or tuple
         """
         if method == "softmax":
-            print(bcolors.OKBLUE + "Using **SoftMax**" + bcolors.ENDC)
+            logger.info("Using SoftMax")
             pfunc = softmax
         elif method == "sparsemax": # Assuming self.entmax_15 is defined
-            print(bcolors.OKBLUE + "Using **SparseMax (1.5-entmax)**" + bcolors.ENDC)
+            logger.info("Using SparseMax (1.5-entmax)")
             pfunc = self.entmax_15
         elif method == "normalized_exponential":
-            print(bcolors.OKBLUE + f"Using Normalized Exponential (Temp: {temperature})" + bcolors.ENDC)
+            logger.info(f"Using Normalized Exponential (Temp: {temperature})")
             pfunc = lambda x: self.normalized_exponential_vector(x, temperature)
         else:
             raise ValueError(f"Unknown method: {method}. Choose from 'softmax', 'sparsemax', 'normalized_exponential'.")
@@ -995,9 +988,11 @@ class CellEmbedding(object):
         # This relies on self.cell_distance, which iterates self.adata.obs.index.
         # Ensure the input 'adata' is consistent with 'self.adata'.
         if not hasattr(self, 'adata') or self.adata is None or adata is not self.adata:
-             print(bcolors.WARNING + "Input 'adata' might not be consistent with 'self.adata' used by "
-                                   "internal methods like cell_distance. Ensure get_adata() was called and "
-                                   "the same AnnData object is used." + bcolors.ENDC)
+             logger.warning(
+                 "Input 'adata' might not be consistent with 'self.adata' used by "
+                 "internal methods like cell_distance. Ensure get_adata() was called and "
+                 "the same AnnData object is used."
+             )
 
 
         phenotype_names = list(phenotype_markers.keys())
@@ -1008,12 +1003,12 @@ class CellEmbedding(object):
         for pheno_name in tqdm.tqdm(phenotype_names, desc="Computing similarities per phenotype"):
             markers = phenotype_markers[pheno_name]
             if not markers:
-                print(bcolors.WARNING + f"No markers provided for phenotype {pheno_name}. Skipping." + bcolors.ENDC)
+                logger.warning(f"No markers provided for phenotype {pheno_name}. Skipping.")
                 # Assign a default low similarity or handle as appropriate
                 raw_similarity_scores[pheno_name] = [0.0] * len(self.adata.obs) # Or len(adata.obs) if strictly using input adata
                 continue
             
-            print(bcolors.OKGREEN + f"Markers for {pheno_name}: {', '.join(markers[:5])}{'...' if len(markers) > 5 else ''}" + bcolors.ENDC)
+            logger.info(f"Markers for {pheno_name}: {', '.join(markers[:5])}{'...' if len(markers) > 5 else ''}")
             phenotype_vector = self.embed.generate_vector(markers) # Assumes gene names are uppercase or handled by generate_vector
             
             # self.cell_distance calculates similarities for cells in self.adata.obs.index
@@ -1034,7 +1029,7 @@ class CellEmbedding(object):
                 if len(pheno_sims) == num_cells:
                     similarity_matrix_cells_x_phenos[:, i] = pheno_sims
                 else:
-                    print(bcolors.WARNING + f"Similarity score list length mismatch for {pheno_name}. Expected {num_cells}, got {len(pheno_sims)}. Padding with zeros." + bcolors.ENDC)
+                    logger.warning(f"Similarity score list length mismatch for {pheno_name}. Expected {num_cells}, got {len(pheno_sims)}. Padding with zeros.")
                     similarity_matrix_cells_x_phenos[:len(pheno_sims), i] = pheno_sims # Fill what's available
 
         # Apply probability function per cell (i.e., per row of similarity_matrix_cells_x_phenos)
@@ -1069,7 +1064,7 @@ class CellEmbedding(object):
             else:
                 # Should not happen if adata and self.adata are consistent and num_cells matches
                 assigned_phenotypes_list.append(np.nan) # Or some default
-                print(bcolors.WARNING + f"Mismatch in cell counts when assigning probabilities for cell {cell_id}." + bcolors.ENDC)
+                logger.warning(f"Mismatch in cell counts when assigning probabilities for cell {cell_id}.")
 
 
         adata.obs[target_col] = pd.Categorical(assigned_phenotypes_list, categories=phenotype_names) # Use Categorical for defined order
@@ -1133,7 +1128,7 @@ class CellEmbedding(object):
                 odists.append(dist)
             adata.obs[ph] = odists
         for ph in up_and_down:
-            print(ph)
+            logger.info(ph)
             up_genes = up_markers[ph]
             down_genes = down_markers[ph]
             vec_up = self.embed.generate_vector(up_genes)
@@ -1192,11 +1187,11 @@ class CellEmbedding(object):
         :return: Anndata with cell embedding stored in metadata ("obsm").
         :rtype:  anndata.AnnData
         """
-        print(bcolors.OKGREEN + "Loading embedding in X_genevector." + bcolors.ENDC)
-        
+        logger.info("Loading embedding in X_genevector.")
+
         # Ensure self.data and self.matrix are populated from __init__
         if not self.data or not self.matrix:
-            print(bcolors.FAIL + "CellEmbedding data or matrix not initialized. Run constructor properly." + bcolors.ENDC)
+            logger.error("CellEmbedding data or matrix not initialized. Run constructor properly.")
             # Or, attempt to run parts of __init__ if feasible, though better to ensure constructor worked.
             # For now, assume __init__ was successful.
 
@@ -1206,7 +1201,7 @@ class CellEmbedding(object):
         # This makes current_adata.obs.index consistent with self.data.keys() and self.matrix row order.
         cells_with_embeddings = list(self.data.keys())
         if not cells_with_embeddings:
-            print(bcolors.FAIL + "No cells with embeddings found in self.data. Cannot proceed with get_adata." + bcolors.ENDC)
+            logger.error("No cells with embeddings found in self.data. Cannot proceed with get_adata.")
             return current_adata # Or raise an error
 
         current_adata = current_adata[cells_with_embeddings, :].copy() # Ensure it's a copy after filtering
@@ -1223,7 +1218,7 @@ class CellEmbedding(object):
                  x_genevector_list.append(self.matrix[matrix_row_idx])
             else:
                 # This should not happen if cells_with_embeddings was used correctly
-                print(bcolors.WARNING + f"Could not find vector for cell {cell_id_in_adata} in self.matrix. Using zero vector.")
+                logger.warning(f"Could not find vector for cell {cell_id_in_adata} in self.matrix. Using zero vector.")
                 # Determine vector size from first vector in self.matrix or a default
                 vec_size = self.matrix[0].shape[0] if self.matrix and len(self.matrix[0]) > 0 else 100
                 x_genevector_list.append(np.zeros(vec_size))
@@ -1231,7 +1226,7 @@ class CellEmbedding(object):
 
         current_adata.obsm['X_genevector'] = np.array(x_genevector_list)
         
-        print(bcolors.OKGREEN + "Running Scanpy neighbors and umap." + bcolors.ENDC)
+        logger.info("Running Scanpy neighbors and umap.")
         sc.pp.neighbors(current_adata, use_rep="X_genevector", n_neighbors=n_neighbors)
         sc.tl.umap(current_adata, min_dist=min_dist)
         

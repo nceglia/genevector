@@ -11,3 +11,4 @@ torch==2.1.0
 scikit-misc==0.3.0
 leidenalg==0.10.1
 anndata==0.10.3
+rich>=13.0

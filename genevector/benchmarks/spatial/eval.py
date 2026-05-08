@@ -105,7 +105,7 @@ def _auc(true_sims: list[float], random_sims: list[float]) -> float:
 
 def _discover_grafiti_markers(adata: ad.AnnData, gt: dict) -> dict[str, list[str]]:
     """Partition non-overlay markers among cell_types by max mean expression."""
-    added = {g.upper() for g in gt.get("added_gene_names", [])}
+    added = {g.upper() for g in gt.get("genes", {}).keys()}
     var_upper = [str(v).upper() for v in adata.var_names]
     grafiti_idx = [i for i, v in enumerate(var_upper) if v not in added]
     if not grafiti_idx:
@@ -130,13 +130,20 @@ def _discover_grafiti_markers(adata: ad.AnnData, gt: dict) -> dict[str, list[str
     return out
 
 
+def _genes_with_role(gt: dict, role: str) -> list[str]:
+    return [
+        name.upper() for name, meta in gt.get("genes", {}).items()
+        if meta.get("role") == role
+    ]
+
+
 def _build_marker_dict(adata: ad.AnnData, gt: dict) -> dict[str, list[str]]:
     """Phenotype → markers map for ``phenotype_probability``."""
     type_markers = _discover_grafiti_markers(adata, gt)
-    ligs = [p["ligand"].upper() for p in gt.get("paracrine_pairs", [])]
-    recs = [p["receptor"].upper() for p in gt.get("paracrine_pairs", [])]
-    niches = [n["gene"].upper() for n in gt.get("niche_genes", [])]
-    trare = [g.upper() for g in gt.get("trare_genes", [])]
+    ligs = _genes_with_role(gt, "ligand")
+    recs = _genes_with_role(gt, "receptor")
+    niches = _genes_with_role(gt, "niche_gene")
+    trare = _genes_with_role(gt, "rare_subtype_marker")
 
     return {
         "Tumor": type_markers.get("Tumor", []) + ligs,
@@ -167,17 +174,20 @@ def _coarsen_label(label: str) -> str:
     return s
 
 
+def _pairs_with_kind(gt: dict, kind: str) -> list[tuple[str, str]]:
+    return [
+        (p["gene_a"].upper(), p["gene_b"].upper())
+        for p in gt.get("pairs", [])
+        if p.get("kind") == kind
+    ]
+
+
 def _build_pairs_for_recovery(
     gt: dict,
 ) -> dict[str, list[tuple[str, str]]]:
-    paracrine = [
-        (p["ligand"].upper(), p["receptor"].upper())
-        for p in gt.get("paracrine_pairs", [])
-    ]
-    ligs = [p["ligand"].upper() for p in gt.get("paracrine_pairs", [])]
-    niches = [n["gene"].upper() for n in gt.get("niche_genes", [])]
-    niche = [(n, l) for n in niches for l in ligs]
-    hks = [g.upper() for g in gt.get("housekeeping_genes", [])]
+    paracrine = _pairs_with_kind(gt, "paracrine")
+    niche = _pairs_with_kind(gt, "niche_induction")
+    hks = _genes_with_role(gt, "housekeeping")
     housekeeping = [(a, b) for i, a in enumerate(hks) for j, b in enumerate(hks) if i != j]
     return {"paracrine": paracrine, "niche": niche, "housekeeping": housekeeping}
 

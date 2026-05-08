@@ -114,16 +114,18 @@ def test_housekeeping_uniform(overlaid):
 def test_ground_truth_schema(overlaid):
     _, gt = overlaid
     for key in (
-        "version",
-        "paracrine_pairs",
-        "niche_genes",
-        "trare_genes",
-        "housekeeping_genes",
-        "t_subtypes",
-        "added_gene_names",
+        "template", "version", "seed", "params",
+        "phenotypes", "genes", "pairs",
     ):
         assert key in gt
-    assert len(gt["paracrine_pairs"]) == 5
+    assert gt["version"] == "2.0"
+    assert gt["template"] == "pathology"
+    paracrine_pairs = [p for p in gt["pairs"] if p["kind"] == "paracrine"]
+    assert len(paracrine_pairs) == 5
+    ligand_genes = [n for n, g in gt["genes"].items() if g["role"] == "ligand"]
+    assert len(ligand_genes) == 5
+    receptor_genes = [n for n, g in gt["genes"].items() if g["role"] == "receptor"]
+    assert len(receptor_genes) == 5
     round_trip = json.loads(json.dumps(gt))
     assert round_trip == gt
 
@@ -139,7 +141,8 @@ def test_build_pathology_e2e():
     adata, gt = build_pathology(layout_kwargs={"num_cells": 1500}, seed=SEED)
     assert adata.n_vars >= 23
     assert "T_stromal" in set(adata.obs["phenotype"].astype(str))
-    assert gt["version"] == "1.0"
+    assert gt["version"] == "2.0"
+    assert gt["template"] == "pathology"
     json.dumps(gt)
 
 
@@ -156,6 +159,7 @@ def test_no_t_cells_no_split():
     )
     adata = create_anndata_from_synthetic(df)
     new_adata, gt = apply_overlay(adata, seed=SEED)
+    # With t_fraction=0, none of the T_* phenotypes should appear.
     for sub in ("T_stromal", "T_intratumoral", "T_rare"):
-        assert gt["t_subtypes"][sub]["n_cells"] == 0
+        assert sub not in gt["phenotypes"]
     assert "phenotype_coarse" in new_adata.obs.columns

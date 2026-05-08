@@ -28,8 +28,7 @@ import pandas as pd
 import anndata
 from scipy.spatial import cKDTree
 
-
-_GROUND_TRUTH_VERSION = "1.0"
+from ._shared import GroundTruth, GROUND_TRUTH_VERSION
 
 
 def apply_overlay(
@@ -175,34 +174,86 @@ def apply_overlay(
         uns={k: v for k, v in adata.uns.items()},
     )
 
-    ground_truth = {
-        "version": _GROUND_TRUTH_VERSION,
-        "seed": int(seed),
-        "paracrine_pairs": paracrine_meta,
-        "niche_genes": niche_meta,
-        "trare_genes": trare_names,
-        "housekeeping_genes": hk_names,
-        "t_subtypes": {
-            "T_stromal": {
-                "n_cells": int(t_subtype_counts["T_stromal"]),
-                "tumor_frac_range": [0.0, float(t_intratumoral_threshold)],
-            },
-            "T_intratumoral": {
-                "n_cells": int(t_subtype_counts["T_intratumoral"]),
-                "tumor_frac_range": [
-                    float(t_intratumoral_threshold),
-                    float(t_rare_threshold),
-                ],
-            },
-            "T_rare": {
-                "n_cells": int(t_subtype_counts["T_rare"]),
-                "tumor_frac_range": [float(t_rare_threshold), 1.0],
-            },
+    ground_truth = _build_ground_truth_v2(
+        seed=int(seed),
+        new_phenotype=new_phenotype,
+        paracrine_meta=paracrine_meta,
+        niche_meta=niche_meta,
+        trare_names=trare_names,
+        hk_names=hk_names,
+        params={
+            "n_paracrine": int(n_paracrine),
+            "n_niche": int(n_niche),
+            "n_trare": int(n_trare),
+            "n_housekeeping": int(n_housekeeping),
+            "niche_k": float(niche_k),
+            "niche_threshold": float(niche_threshold),
+            "neighbor_radius": float(neighbor_radius),
+            "t_intratumoral_threshold": float(t_intratumoral_threshold),
+            "t_rare_threshold": float(t_rare_threshold),
+            "marker_scale_mean": float(marker_scale_mean),
+            "marker_scale_std": float(marker_scale_std),
+            "background_noise": float(background_noise),
+            "seed": int(seed),
         },
-        "added_gene_names": added_gene_names,
-    }
+    )
 
     return new_adata, ground_truth
+
+
+def _build_ground_truth_v2(
+    *,
+    seed: int,
+    new_phenotype: np.ndarray,
+    paracrine_meta: list,
+    niche_meta: list,
+    trare_names: list,
+    hk_names: list,
+    params: dict,
+) -> dict:
+    gt = GroundTruth(template="pathology", seed=int(seed), params=params)
+
+    pheno_arr = np.asarray(new_phenotype, dtype=object)
+    for name in sorted(set(pheno_arr.astype(str))):
+        n_cells = int((pheno_arr.astype(str) == name).sum())
+        gt.add_phenotype(name, n_cells, [])
+
+    lig_names = [p["ligand"] for p in paracrine_meta]
+    rec_names = [p["receptor"] for p in paracrine_meta]
+    niche_names = [n["gene"] for n in niche_meta]
+
+    for name in lig_names:
+        gt.add_gene(name, "ligand", phenotype="Tumor")
+    for name in rec_names:
+        gt.add_gene(name, "receptor", phenotype="T_*")
+    for n_meta in niche_meta:
+        gt.add_gene(
+            n_meta["gene"], "niche_gene", phenotype="T_intratumoral",
+            niche_k=float(n_meta["k"]),
+            niche_threshold=float(n_meta["threshold"]),
+            niche_radius=float(n_meta["radius"]),
+            modulator_phenotype=n_meta["modulator_phenotype"],
+        )
+    for name in trare_names:
+        gt.add_gene(name, "rare_subtype_marker", phenotype="T_rare")
+    for name in hk_names:
+        gt.add_gene(name, "housekeeping", phenotype=None)
+
+    for lig, rec in zip(lig_names, rec_names):
+        gt.add_pair(
+            lig, rec, "paracrine",
+            ligand_phenotype="Tumor",
+            receptor_phenotype="T_*",
+        )
+    for niche in niche_names:
+        for lig in lig_names:
+            gt.add_pair(
+                niche, lig, "niche_induction",
+                modulator_phenotype="Tumor",
+                expressed_phenotype="T_intratumoral",
+            )
+
+    return gt.to_json()
 
 
 def _infer_marker_scale(adata, threshold: float = 0.5) -> tuple[float, float]:

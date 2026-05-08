@@ -51,6 +51,7 @@ Key Features
 
    source/backends
    source/targets
+   source/synthetic_templates
 
 .. toctree::
    :maxdepth: 2

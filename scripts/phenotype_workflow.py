@@ -207,6 +207,10 @@ def main():
             target = "graph_mi"
         if target in ("graph_mi", "graph_cross_mi", "graph_xcorr"):
             tkw = {"graph": W}
+        if target in ("graph_mi", "graph_cross_mi") and adata.n_vars > 800:
+            log(f"NOTE: {target} is O(n_genes^2) MI ({adata.n_vars} genes); this is fine for "
+                f"targeted panels but slow for large panels. Consider --target graph_xcorr "
+                f"(vectorized) or a smaller --n-genes for whole-transcriptome data.")
     else:
         if target == "auto":
             target = "mi"

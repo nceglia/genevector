@@ -209,10 +209,14 @@ def main():
             target = "graph_mi"
         if target in ("graph_mi", "graph_cross_mi", "graph_xcorr"):
             tkw = {"graph": W}
-        if target in ("graph_mi", "graph_cross_mi") and adata.n_vars > 2500 and device != "cuda":
-            log(f"NOTE: {target} on {adata.n_vars} genes uses the vectorized torch kernel "
-                f"(~20-35x faster than numpy); pass --device cuda to run it on GPU, or reduce "
-                f"--n-genes for whole-transcriptome panels.")
+        if target in ("graph_mi", "graph_cross_mi"):
+            from genevector.metrics import HAS_RUST
+            kern = ("GPU (torch)" if device == "cuda"
+                    else "Rust (rayon, multi-core)" if HAS_RUST else "torch CPU")
+            log(f"{target} cross-MI kernel: {kern}. "
+                + ("" if (device == "cuda" or HAS_RUST) else
+                   "Tip: build the Rust extension (maturin develop --release) for a large "
+                   "multi-core speedup, or pass --device cuda for GPU."))
     else:
         if target == "auto":
             target = "mi"

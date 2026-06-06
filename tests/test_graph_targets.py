@@ -232,3 +232,15 @@ def test_cross_mi_torch_chunking_consistent():
     chunked = _cross_mi_matrix_torch(Ad, na, Bd, nb, device="cpu", max_elems=120 * 2)
     np.testing.assert_allclose(ref, full, atol=1e-6)
     np.testing.assert_allclose(ref, chunked, atol=1e-6)
+
+
+def test_graph_mi_rust_matches_numpy():
+    from genevector.metrics import HAS_RUST
+    if not HAS_RUST:
+        pytest.skip("rust extension (_rust) not built")
+    X, adj, genes = _make_chain_panel(n=60)
+    cpu = target_graph_mi(X, genes, graph=adj, backend="numpy")
+    rust = target_graph_mi(X, genes, graph=adj, backend="rust")
+    for g1 in genes:
+        for g2 in cpu[g1]:
+            assert cpu[g1][g2] == pytest.approx(rust[g1][g2], abs=1e-6)

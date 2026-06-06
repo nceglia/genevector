@@ -191,3 +191,44 @@ def test_graph_cross_mi_no_self_pairs():
     scores = target_graph_cross_mi(X, genes, graph=adj)
     for g in genes:
         assert g not in scores[g]
+
+
+# ─── GPU (torch) graph_mi == numpy graph_mi (validated on CPU torch) ──
+
+def test_graph_mi_torch_matches_numpy():
+    pytest.importorskip("torch")
+    X, adj, genes = _make_chain_panel(n=50)
+    cpu = target_graph_mi(X, genes, graph=adj, backend="numpy")
+    gpu = target_graph_mi(X, genes, graph=adj, backend="gpu", device="cpu")
+    for g1 in genes:
+        for g2 in cpu[g1]:
+            assert cpu[g1][g2] == pytest.approx(gpu[g1][g2], abs=1e-6)
+
+
+def test_graph_cross_mi_torch_matches_numpy():
+    pytest.importorskip("torch")
+    rng = np.random.default_rng(1)
+    n, d = 80, 6
+    X = rng.poisson(1.5, size=(n, d)).astype(float)
+    adj = csr_matrix((rng.random((n, n)) < 0.2).astype(np.float64))
+    genes = [f"g{i}" for i in range(d)]
+    cpu = target_graph_cross_mi(X, genes, graph=adj, backend="numpy")
+    gpu = target_graph_cross_mi(X, genes, graph=adj, backend="gpu", device="cpu")
+    for g1 in genes:
+        for g2 in cpu[g1]:
+            assert cpu[g1][g2] == pytest.approx(gpu[g1][g2], abs=1e-6)
+
+
+def test_cross_mi_torch_chunking_consistent():
+    pytest.importorskip("torch")
+    from genevector._graph_targets import _cross_mi_matrix, _cross_mi_matrix_torch
+    from genevector.metrics import discretize_genes
+    rng = np.random.default_rng(2)
+    X = rng.poisson(1.0, size=(120, 8)).astype(float)
+    Ad, na = discretize_genes(X)
+    Bd, nb = discretize_genes(X + rng.poisson(0.5, X.shape))
+    ref = _cross_mi_matrix(Ad, na, Bd, nb)
+    full = _cross_mi_matrix_torch(Ad, na, Bd, nb, device="cpu", max_elems=10**9)
+    chunked = _cross_mi_matrix_torch(Ad, na, Bd, nb, device="cpu", max_elems=120 * 2)
+    np.testing.assert_allclose(ref, full, atol=1e-6)
+    np.testing.assert_allclose(ref, chunked, atol=1e-6)

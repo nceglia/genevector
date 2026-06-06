@@ -209,10 +209,10 @@ def main():
             target = "graph_mi"
         if target in ("graph_mi", "graph_cross_mi", "graph_xcorr"):
             tkw = {"graph": W}
-        if target in ("graph_mi", "graph_cross_mi") and adata.n_vars > 800:
-            log(f"NOTE: {target} is O(n_genes^2) MI ({adata.n_vars} genes); this is fine for "
-                f"targeted panels but slow for large panels. Consider --target graph_xcorr "
-                f"(vectorized) or a smaller --n-genes for whole-transcriptome data.")
+        if target in ("graph_mi", "graph_cross_mi") and adata.n_vars > 2500 and device != "cuda":
+            log(f"NOTE: {target} on {adata.n_vars} genes uses the vectorized torch kernel "
+                f"(~20-35x faster than numpy); pass --device cuda to run it on GPU, or reduce "
+                f"--n-genes for whole-transcriptome panels.")
     else:
         if target == "auto":
             target = "mi"

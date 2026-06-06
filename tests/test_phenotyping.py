@@ -79,6 +79,31 @@ def test_debias_and_contrastive_run(trained):
     assert set(o2.obs["c"]) <= set(markers)
 
 
+def test_score_norm_options_run(trained):
+    _, _, cembed, agv, markers = trained
+    for sn in ("zscore", "rank"):
+        out = cembed.phenotype_probability(agv, markers, temperature=0.05,
+                                           target_col=f"sn_{sn}", score_norm=sn)
+        assert set(out.obs[f"sn_{sn}"]) <= set(markers)
+        pcols = [c for c in out.obs.columns if "Pseudo-probability" in c]
+        np.testing.assert_allclose(out.obs[pcols].to_numpy().sum(1), 1.0, atol=1e-5)
+    with pytest.raises(ValueError, match="Unknown score_norm"):
+        cembed.phenotype_probability(agv, markers, target_col="bad", score_norm="bogus")
+
+
+def test_scoring_time_smoothing_runs(trained):
+    _, _, cembed, agv, markers = trained
+    from sklearn.neighbors import kneighbors_graph
+    G = kneighbors_graph(agv.obsm["spatial"], 5, mode="connectivity")
+    G = ((G + G.T) > 0).astype(float).tocsr()
+    before = np.array(cembed.matrix).copy()
+    out = cembed.phenotype_probability(agv, markers, temperature=0.05, target_col="sm",
+                                       smooth_graph=G, smooth_alpha=0.5)
+    assert set(out.obs["sm"]) <= set(markers)
+    # scoring-time smoothing must NOT mutate the stored cell matrix
+    np.testing.assert_allclose(np.array(cembed.matrix), before)
+
+
 def test_label_propagation_runs_and_preserves_simplex(trained):
     _, _, cembed, agv, markers = trained
     W = cembed._row_normalize_graph  # ensure helper exists

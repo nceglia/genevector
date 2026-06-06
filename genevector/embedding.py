@@ -949,7 +949,7 @@ class CellEmbedding(object):
         return similarities
 
 
-    def phenotype_probability(self, adata, phenotype_markers, return_distances=False, method="normalized_exponential", target_col="genevector", temperature=0.001, debias=0.0, contrastive=False, lp_graph=None, lp_alpha=0.0, lp_iter=3):
+    def phenotype_probability(self, adata, phenotype_markers, return_distances=False, method="normalized_exponential", target_col="genevector", temperature=0.001, debias=0.0, contrastive=False, score_norm="none", smooth_graph=None, smooth_alpha=0.5, smooth_adaptive=True, smooth_counts=None, lp_graph=None, lp_alpha=0.0, lp_iter=3):
         """
         Probabilistically assign phenotypes based on a set of cell type labels and associated markers.
         Loads into the anndata the pseudo-probabilities for each cell type and the deterministic label
@@ -977,6 +977,25 @@ class CellEmbedding(object):
                             phenotype vector before scoring (the get_predictive_genes formulation).
                             Opt-in (default False). Helps when phenotypes are not well separated.
         :type contrastive: bool
+        :param score_norm: Per-phenotype normalization of the cell×phenotype similarity columns
+                           before the probability function. One of "none" (default), "zscore"
+                           (subtract each phenotype's mean / divide by std — stops a phenotype that
+                           is close to everyone from winning by default), or "rank" (per-phenotype
+                           percentile rank). Opt-in; helps on some datasets, default off.
+        :type score_norm: str
+        :param smooth_graph: Optional scipy sparse adjacency (cells x cells, same order as the cell
+                             embedding) to spatially denoise the cell vectors *for scoring only*
+                             (does not mutate self.matrix / the UMAP). Opt-in. For persistent
+                             denoising that also affects the embedding use :meth:`denoise_cell_vectors`.
+        :type smooth_graph: scipy.sparse matrix or None
+        :param smooth_alpha: Smoothing weight (or per-cell cap when ``smooth_adaptive``).
+        :type smooth_alpha: float
+        :param smooth_adaptive: Scale the smoothing weight per cell by inverse count (low-count
+                                cells borrow more). Default True.
+        :type smooth_adaptive: bool
+        :param smooth_counts: Per-cell totals for adaptive smoothing; if None, derived from the
+                              loaded expression context.
+        :type smooth_counts: array-like or None
         :param lp_graph: Optional scipy sparse adjacency (cells x cells, same order as the cell
                          embedding) for spatial label propagation over the soft probabilities. Opt-in.
         :type lp_graph: scipy.sparse matrix or None
@@ -1021,6 +1040,11 @@ class CellEmbedding(object):
 
         # Cell matrix aligned to self.adata.obs.index (== self.matrix row order).
         C = np.asarray(self.matrix, dtype=float)
+        if smooth_graph is not None:
+            # Spatially denoise a COPY of the cell vectors for scoring only (self.matrix and
+            # the UMAP are untouched). Opt-in; helps sparse / spatially-organised data.
+            C = self._graph_smooth(C, smooth_graph, alpha=smooth_alpha,
+                                   adaptive=smooth_adaptive, counts=smooth_counts)
         if debias:
             # Subtract a fraction of the shared background direction. Opt-in: mild values
             # de-saturate scores on balanced data; large values over-correct a dominant
@@ -1056,6 +1080,18 @@ class CellEmbedding(object):
         Vn = V / (np.linalg.norm(V, axis=1, keepdims=True) + 1e-9)
         similarity_matrix_cells_x_phenos = Cn @ Vn.T
         num_cells = similarity_matrix_cells_x_phenos.shape[0]
+
+        # Optional per-phenotype (column) normalization of the similarity matrix. De-biases a
+        # phenotype that is close to every cell so it doesn't win the argmax by default. Opt-in.
+        if score_norm and score_norm != "none":
+            S = similarity_matrix_cells_x_phenos
+            if score_norm == "zscore":
+                S = (S - S.mean(axis=0)) / (S.std(axis=0) + 1e-9)
+            elif score_norm == "rank":
+                S = np.argsort(np.argsort(S, axis=0), axis=0) / max(S.shape[0] - 1, 1)
+            else:
+                raise ValueError(f"Unknown score_norm: {score_norm}. Choose 'none', 'zscore', 'rank'.")
+            similarity_matrix_cells_x_phenos = S
 
         # Apply the probability function per cell (per row).
         probabilities_per_cell = [
@@ -1144,6 +1180,31 @@ class CellEmbedding(object):
             F = alpha * numpy.asarray(Wn @ F) + (1.0 - alpha) * P0
         return F
 
+    def _graph_smooth(self, M, graph, alpha=0.5, adaptive=True, counts=None, k0=None, beta=0.0):
+        """Message-pass a matrix over a graph: (1-a)*self + a*mean(neighbours) [+ beta*2-hop].
+
+        Pure (does not mutate). ``adaptive=True`` makes a_i = min(cap, k0/(k0+counts_i)) so
+        low-count cells borrow more. Shared by denoise_cell_vectors and phenotype_probability.
+        """
+        M = numpy.asarray(M, dtype=float)
+        Wn = self._row_normalize_graph(graph)
+        one = numpy.asarray(Wn @ M)
+        if adaptive:
+            if counts is None:
+                counts = self._cell_total_counts()
+            counts = numpy.asarray(counts, dtype=float).ravel()
+            if k0 is None:
+                pos = counts[counts > 0]
+                k0 = float(numpy.median(pos)) if pos.size else 1.0
+            cap = alpha if 0 < alpha < 1 else 0.85
+            a = numpy.minimum(cap, k0 / (k0 + counts)).reshape(-1, 1)
+        else:
+            a = float(alpha)
+        out = (1.0 - a) * M + a * one
+        if beta > 0:
+            out = out + beta * (numpy.asarray(Wn @ one) - one)
+        return out
+
     def denoise_cell_vectors(self, graph, alpha=0.5, adaptive=True, counts=None,
                              k0=None, beta=0.0):
         """Graph-denoise the cell matrix in gene-vector space (opt-in; modifies self.matrix).
@@ -1168,23 +1229,8 @@ class CellEmbedding(object):
         :param beta: optional 2-hop weight.
         :return: the new self.matrix (list of vectors). Original kept in self.uncorrected_matrix.
         """
-        M = numpy.asarray(self.matrix, dtype=float)
-        Wn = self._row_normalize_graph(graph)
-        one = numpy.asarray(Wn @ M)
-        if adaptive:
-            if counts is None:
-                counts = self._cell_total_counts()
-            counts = numpy.asarray(counts, dtype=float).ravel()
-            if k0 is None:
-                pos = counts[counts > 0]
-                k0 = float(numpy.median(pos)) if pos.size else 1.0
-            cap = alpha if 0 < alpha < 1 else 0.85
-            a = numpy.minimum(cap, k0 / (k0 + counts)).reshape(-1, 1)
-        else:
-            a = float(alpha)
-        out = (1.0 - a) * M + a * one
-        if beta > 0:
-            out = out + beta * (numpy.asarray(Wn @ one) - one)
+        out = self._graph_smooth(self.matrix, graph, alpha=alpha, adaptive=adaptive,
+                                 counts=counts, k0=k0, beta=beta)
         self.uncorrected_matrix = self.matrix
         self.matrix = [out[i] for i in range(out.shape[0])]
         return self.matrix

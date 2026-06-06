@@ -149,6 +149,8 @@ def main():
                    help="fraction of dataset vector subtracted before scoring (0=off).")
     p.add_argument("--contrastive", action="store_true",
                    help="subtract competing-phenotype means before scoring.")
+    p.add_argument("--score-norm", default="none", choices=["none", "zscore", "rank"],
+                   help="per-phenotype normalization of similarity columns before assignment.")
     p.add_argument("--label-prop", type=float, default=0.0,
                    help="spatial label-propagation coupling on probabilities (0=off, spatial only).")
     p.add_argument("--temperature", type=float, default=0.05)
@@ -260,7 +262,7 @@ def main():
     adata_gv = cembed.phenotype_probability(
         adata_gv, markers, method="normalized_exponential", temperature=args.temperature,
         target_col="genevector", debias=args.debias, contrastive=args.contrastive,
-        lp_graph=lp_graph, lp_alpha=args.label_prop)
+        score_norm=args.score_norm, lp_graph=lp_graph, lp_alpha=args.label_prop)
 
     # outputs
     out_h5ad = os.path.join(args.output, "phenotyped.h5ad")
@@ -272,7 +274,7 @@ def main():
         "input": args.input, "n_cells": int(adata_gv.n_obs), "n_genes": int(adata.n_vars),
         "spatial": bool(spatial), "target": target, "denoise": bool(args.denoise and spatial),
         "debias": args.debias, "contrastive": bool(args.contrastive),
-        "label_prop": args.label_prop,
+        "score_norm": args.score_norm, "label_prop": args.label_prop,
         "label_counts": {k: int(v) for k, v in adata_gv.obs["genevector"].value_counts().items()},
         "markers_flagged": int((qc["flag"] != "ok").sum()),
     }

@@ -139,3 +139,6 @@ spatial_spec.txt
 
 # Benchmark artifacts
 benchmarks_artifacts/
+
+# Scratch / experiment workspace (not part of PR)
+scratch/

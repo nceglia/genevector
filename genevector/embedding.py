@@ -515,7 +515,11 @@ class CellEmbedding(object):
              logger.warning("No cell vectors were generated. self.matrix is empty.")
              self.dataset_vector = numpy.zeros(self.embed.vector_size if hasattr(self.embed, "vector_size") else 100) # Default size
         else:
-             self.dataset_vector = numpy.zeros(numpy.array(self.matrix).shape[1])
+             # The dataset vector is the mean cell vector — the shared "background"
+             # direction every cell points toward. Previously left as zeros, which
+             # silently disabled the contrastive subtraction in get_predictive_genes
+             # and made debiased phenotype scoring impossible.
+             self.dataset_vector = numpy.array(self.matrix).mean(axis=0)
 
         logger.info(f"Found {cells_with_no_counts} Cells with No Counts / No scorable gene expression.")
         logger.info("Finished CellEmbedding Initialization.")
@@ -945,14 +949,14 @@ class CellEmbedding(object):
         return similarities
 
 
-    def phenotype_probability(self, adata, phenotype_markers, return_distances=False, method="normalized_exponential", target_col="genevector", temperature=0.001):
+    def phenotype_probability(self, adata, phenotype_markers, return_distances=False, method="normalized_exponential", target_col="genevector", temperature=0.001, debias=0.0, contrastive=False, score_norm="none", smooth_graph=None, smooth_alpha=0.5, smooth_adaptive=True, smooth_counts=None, lp_graph=None, lp_alpha=0.0, lp_iter=3):
         """
         Probabilistically assign phenotypes based on a set of cell type labels and associated markers.
         Loads into the anndata the pseudo-probabilities for each cell type and the deterministic label
         taken from the maximum probability over cell types.
 
         :param adata: AnnData object. It's assumed this is `self.adata` or is consistent with it,
-                      especially regarding `adata.obs.index` if `self.cell_distance` is used.
+                      especially regarding `adata.obs.index`.
         :type adata: anndata.AnnData
         :param phenotype_markers: Dictionary of cell type labels (key) to gene markers (list of strings, value).
         :type phenotype_markers: dict
@@ -964,6 +968,43 @@ class CellEmbedding(object):
         :type target_col: str
         :param temperature: Temperature parameter for the "normalized_exponential" method.
         :type temperature: float
+        :param debias: Fraction (0–1) of the dataset (background) vector subtracted from each cell
+                       vector before scoring. Opt-in (default 0.0 = current behaviour). Mild values
+                       (~0.5) de-saturate scores on balanced data; large values can over-correct a
+                       dominant population (e.g. epithelial-rich tumours). See :meth:`scoring_report`.
+        :type debias: float
+        :param contrastive: If True, subtract the mean of competing phenotype vectors from each
+                            phenotype vector before scoring (the get_predictive_genes formulation).
+                            Opt-in (default False). Helps when phenotypes are not well separated.
+        :type contrastive: bool
+        :param score_norm: Per-phenotype normalization of the cell×phenotype similarity columns
+                           before the probability function. One of "none" (default), "zscore"
+                           (subtract each phenotype's mean / divide by std — stops a phenotype that
+                           is close to everyone from winning by default), or "rank" (per-phenotype
+                           percentile rank). Opt-in; helps on some datasets, default off.
+        :type score_norm: str
+        :param smooth_graph: Optional scipy sparse adjacency (cells x cells, same order as the cell
+                             embedding) to spatially denoise the cell vectors *for scoring only*
+                             (does not mutate self.matrix / the UMAP). Opt-in. For persistent
+                             denoising that also affects the embedding use :meth:`denoise_cell_vectors`.
+        :type smooth_graph: scipy.sparse matrix or None
+        :param smooth_alpha: Smoothing weight (or per-cell cap when ``smooth_adaptive``).
+        :type smooth_alpha: float
+        :param smooth_adaptive: Scale the smoothing weight per cell by inverse count (low-count
+                                cells borrow more). Default True.
+        :type smooth_adaptive: bool
+        :param smooth_counts: Per-cell totals for adaptive smoothing; if None, derived from the
+                              loaded expression context.
+        :type smooth_counts: array-like or None
+        :param lp_graph: Optional scipy sparse adjacency (cells x cells, same order as the cell
+                         embedding) for spatial label propagation over the soft probabilities. Opt-in.
+        :type lp_graph: scipy.sparse matrix or None
+        :param lp_alpha: Label-propagation coupling in [0, 1) (0 disables). Smooths probabilities
+                         over ``lp_graph`` as a post-step. Improves spatial coherence; can blur
+                         identity in intermixed tissue — keep small (~0.3) and opt-in.
+        :type lp_alpha: float
+        :param lp_iter: Number of label-propagation iterations.
+        :type lp_iter: int
         :return: AnnData with cell type labels and probabilities. If return_distances is True,
                  returns a tuple (adata, raw_similarities_dict).
         :rtype: anndata.AnnData or tuple
@@ -996,51 +1037,73 @@ class CellEmbedding(object):
 
 
         phenotype_names = list(phenotype_markers.keys())
-        # Stores raw similarities: {phenotype_name: [sim_cell1, sim_cell2, ...]}
-        # Order of similarities in lists will correspond to self.adata.obs.index
-        raw_similarity_scores = collections.defaultdict(list)
 
-        for pheno_name in tqdm.tqdm(phenotype_names, desc="Computing similarities per phenotype"):
-            markers = phenotype_markers[pheno_name]
-            if not markers:
-                logger.warning(f"No markers provided for phenotype {pheno_name}. Skipping.")
-                # Assign a default low similarity or handle as appropriate
-                raw_similarity_scores[pheno_name] = [0.0] * len(self.adata.obs) # Or len(adata.obs) if strictly using input adata
+        # Cell matrix aligned to self.adata.obs.index (== self.matrix row order).
+        C = np.asarray(self.matrix, dtype=float)
+        if smooth_graph is not None:
+            # Spatially denoise a COPY of the cell vectors for scoring only (self.matrix and
+            # the UMAP are untouched). Opt-in; helps sparse / spatially-organised data.
+            C = self._graph_smooth(C, smooth_graph, alpha=smooth_alpha,
+                                   adaptive=smooth_adaptive, counts=smooth_counts)
+        if debias:
+            # Subtract a fraction of the shared background direction. Opt-in: mild values
+            # de-saturate scores on balanced data; large values over-correct a dominant
+            # population. Default debias=0.0 reproduces the original absolute scoring.
+            C = C - float(debias) * np.asarray(self.dataset_vector, dtype=float)
+
+        # Phenotype (marker-mean) vectors.
+        pheno_vectors = []
+        for pheno_name in phenotype_names:
+            markers = phenotype_markers[pheno_name] or []
+            present = [g for g in markers if g in self.embed.embeddings]
+            if not present:
+                logger.warning(f"No usable markers for phenotype {pheno_name}; scoring as zeros.")
+                pheno_vectors.append(np.zeros(C.shape[1]))
                 continue
-            
-            logger.info(f"Markers for {pheno_name}: {', '.join(markers[:5])}{'...' if len(markers) > 5 else ''}")
-            phenotype_vector = self.embed.generate_vector(markers) # Assumes gene names are uppercase or handled by generate_vector
-            
-            # self.cell_distance calculates similarities for cells in self.adata.obs.index
-            # norm=False means use raw vectors for cosine similarity.
-            similarities_for_pheno = self.cell_distance(phenotype_vector, norm=False)
-            raw_similarity_scores[pheno_name] = similarities_for_pheno
+            missing = [g for g in markers if g not in self.embed.embeddings]
+            if missing:
+                logger.info(f"{pheno_name}: {len(missing)} marker(s) absent from embedding: {missing[:5]}")
+            pheno_vectors.append(np.asarray(self.embed.generate_vector(present), dtype=float))
+        V = np.asarray(pheno_vectors, dtype=float)
 
-        # Prepare matrix for probability calculation: rows are cells, columns are phenotypes
-        # The order of cells is implicitly self.adata.obs.index
-        # The order of phenotypes is phenotype_names
-        num_cells = len(self.adata.obs) # Number of cells for which distances were computed
-        similarity_matrix_cells_x_phenos = np.zeros((num_cells, len(phenotype_names)))
+        if contrastive and len(V) > 1:
+            # Contrastive phenotype vectors: subtract the mean of competing phenotypes
+            # (and the background if debiasing) — the get_predictive_genes formulation.
+            bg = float(debias) * np.asarray(self.dataset_vector, dtype=float) if debias else 0.0
+            Vc = np.empty_like(V)
+            for i in range(len(V)):
+                Vc[i] = V[i] - np.delete(V, i, axis=0).mean(axis=0) - bg
+            V = Vc
 
-        for i, pheno_name in enumerate(phenotype_names):
-            if pheno_name in raw_similarity_scores:
-                 # Ensure list length matches num_cells, pad if necessary (e.g. if a pheno was skipped)
-                pheno_sims = raw_similarity_scores[pheno_name]
-                if len(pheno_sims) == num_cells:
-                    similarity_matrix_cells_x_phenos[:, i] = pheno_sims
-                else:
-                    logger.warning(f"Similarity score list length mismatch for {pheno_name}. Expected {num_cells}, got {len(pheno_sims)}. Padding with zeros.")
-                    similarity_matrix_cells_x_phenos[:len(pheno_sims), i] = pheno_sims # Fill what's available
+        # Vectorized cosine similarity (cells x phenotypes).
+        Cn = C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-9)
+        Vn = V / (np.linalg.norm(V, axis=1, keepdims=True) + 1e-9)
+        similarity_matrix_cells_x_phenos = Cn @ Vn.T
+        num_cells = similarity_matrix_cells_x_phenos.shape[0]
 
-        # Apply probability function per cell (i.e., per row of similarity_matrix_cells_x_phenos)
-        probabilities_per_cell = [] # List of np.arrays, each array is probs for one cell
-        for i in range(num_cells):
-            cell_similarity_vector = similarity_matrix_cells_x_phenos[i, :]
-            # Replace NaNs with a low value if any occurred in cell_distance
-            cell_similarity_vector = np.nan_to_num(cell_similarity_vector, nan=-1.0) # Or other appropriate fill
-            
-            prob_dist_for_cell = pfunc(cell_similarity_vector)
-            probabilities_per_cell.append(prob_dist_for_cell)
+        # Optional per-phenotype (column) normalization of the similarity matrix. De-biases a
+        # phenotype that is close to every cell so it doesn't win the argmax by default. Opt-in.
+        if score_norm and score_norm != "none":
+            S = similarity_matrix_cells_x_phenos
+            if score_norm == "zscore":
+                S = (S - S.mean(axis=0)) / (S.std(axis=0) + 1e-9)
+            elif score_norm == "rank":
+                S = np.argsort(np.argsort(S, axis=0), axis=0) / max(S.shape[0] - 1, 1)
+            else:
+                raise ValueError(f"Unknown score_norm: {score_norm}. Choose 'none', 'zscore', 'rank'.")
+            similarity_matrix_cells_x_phenos = S
+
+        # Apply the probability function per cell (per row).
+        probabilities_per_cell = [
+            pfunc(np.nan_to_num(similarity_matrix_cells_x_phenos[i, :], nan=-1.0))
+            for i in range(num_cells)
+        ]
+
+        # Optional spatial label propagation over the soft probabilities (opt-in post-step).
+        if lp_graph is not None and lp_alpha and lp_alpha > 0:
+            P = self._label_propagate(np.vstack(probabilities_per_cell), lp_graph,
+                                      alpha=lp_alpha, n_iter=lp_iter)
+            probabilities_per_cell = [P[i] for i in range(P.shape[0])]
         
         # Store results in the input 'adata' object
         # Probabilities are ordered by self.adata.obs.index. We assign to input 'adata'.
@@ -1089,6 +1152,175 @@ class CellEmbedding(object):
             return adata, distances_dict
         else:
             return adata
+
+    # ─── Spatial / graph helpers (opt-in) ──────────────────────────
+
+    @staticmethod
+    def _row_normalize_graph(graph):
+        """Row-normalize a sparse adjacency so each row sums to 1 (zero-degree rows stay 0)."""
+        from scipy.sparse import diags
+        rs = numpy.asarray(graph.sum(axis=1)).ravel()
+        rs[rs == 0] = 1.0
+        return diags(1.0 / rs) @ csr_matrix(graph)
+
+    def _cell_total_counts(self):
+        """Per-cell total expression aligned to self.matrix / self.data order."""
+        keys = list(self.data.keys())
+        exp = getattr(self.context, "expression", None)
+        if exp:
+            return numpy.array([sum(exp.get(k, {}).values()) for k in keys], dtype=float)
+        return numpy.ones(len(keys), dtype=float)
+
+    def _label_propagate(self, P, graph, alpha=0.3, n_iter=3):
+        """Spatial label propagation: F <- a*Wn@F + (1-a)*P0, iterated; returns smoothed probs."""
+        Wn = self._row_normalize_graph(graph)
+        P0 = numpy.asarray(P, dtype=float)
+        F = P0.copy()
+        for _ in range(int(n_iter)):
+            F = alpha * numpy.asarray(Wn @ F) + (1.0 - alpha) * P0
+        return F
+
+    def _graph_smooth(self, M, graph, alpha=0.5, adaptive=True, counts=None, k0=None, beta=0.0):
+        """Message-pass a matrix over a graph: (1-a)*self + a*mean(neighbours) [+ beta*2-hop].
+
+        Pure (does not mutate). ``adaptive=True`` makes a_i = min(cap, k0/(k0+counts_i)) so
+        low-count cells borrow more. Shared by denoise_cell_vectors and phenotype_probability.
+        """
+        M = numpy.asarray(M, dtype=float)
+        Wn = self._row_normalize_graph(graph)
+        one = numpy.asarray(Wn @ M)
+        if adaptive:
+            if counts is None:
+                counts = self._cell_total_counts()
+            counts = numpy.asarray(counts, dtype=float).ravel()
+            if k0 is None:
+                pos = counts[counts > 0]
+                k0 = float(numpy.median(pos)) if pos.size else 1.0
+            cap = alpha if 0 < alpha < 1 else 0.85
+            a = numpy.minimum(cap, k0 / (k0 + counts)).reshape(-1, 1)
+        else:
+            a = float(alpha)
+        out = (1.0 - a) * M + a * one
+        if beta > 0:
+            out = out + beta * (numpy.asarray(Wn @ one) - one)
+        return out
+
+    def denoise_cell_vectors(self, graph, alpha=0.5, adaptive=True, counts=None,
+                             k0=None, beta=0.0):
+        """Graph-denoise the cell matrix in gene-vector space (opt-in; modifies self.matrix).
+
+        Message passing over a (usually spatial) graph::
+
+            (1 - a) * self + a * mean(neighbours)   [+ beta * 2-hop]
+
+        With ``adaptive=True`` the per-cell weight ``a_i = min(0.85, k0/(k0+counts_i))`` so
+        low-count (noisy) cells borrow heavily from neighbours while high-count cells barely
+        move — robust across sparsity regimes. Strongly improves cell typing on sparse and/or
+        spatially organised data (e.g. low-depth Xenium), but can contaminate identity in
+        intermixed tissue, so it is **opt-in and OFF by default**. It also gives previously
+        near-empty cells a usable vector. Call BEFORE :meth:`get_adata` /
+        :meth:`phenotype_probability`.
+
+        :param graph: scipy sparse adjacency (cells x cells) aligned to the cell-matrix order.
+        :param alpha: smoothing weight (``adaptive=False``) or the per-cell cap (``adaptive=True``).
+        :param adaptive: scale the weight per cell by inverse count.
+        :param counts: per-cell totals; if None, derived from the loaded expression context.
+        :param k0: adaptive midpoint; defaults to the median of positive counts.
+        :param beta: optional 2-hop weight.
+        :return: the new self.matrix (list of vectors). Original kept in self.uncorrected_matrix.
+        """
+        out = self._graph_smooth(self.matrix, graph, alpha=alpha, adaptive=adaptive,
+                                 counts=counts, k0=k0, beta=beta)
+        self.uncorrected_matrix = self.matrix
+        self.matrix = [out[i] for i in range(out.shape[0])]
+        return self.matrix
+
+    def qc_marker_dict(self, adata, phenotype_markers, layer=None,
+                       specificity_threshold=0.5, min_markers=2, verbose=True):
+        """Quality-control a marker dictionary before phenotyping.
+
+        Computes a provisional mean-expression labelling and, for every (phenotype, marker),
+        reports whether the marker is in the panel, its mean expression, fraction of cells
+        expressing it, a fold ``enrichment`` over the global mean, and a proportion-independent
+        ``specificity`` (tau index in [0, 1] over the per-type means; 1 = specific to one type,
+        0 = uniform). Flags low-specificity markers (tau below ``specificity_threshold``),
+        off-target markers (highest in a different type than declared) and phenotypes with too
+        few usable markers. Tau is used (not raw fold-enrichment) because fold-enrichment is
+        confounded by class proportions and by dense/normalised data.
+
+        :param adata: AnnData with expression (raw counts recommended via ``layer``).
+        :param phenotype_markers: dict of phenotype -> marker gene list.
+        :param layer: layer to read expression from (e.g. "counts"); defaults to ``.X``.
+        :param specificity_threshold: tau below this flags a marker as low-specificity.
+        :param min_markers: warn if a phenotype has fewer usable markers than this.
+        :param verbose: log warnings.
+        :return: pandas.DataFrame with one row per (phenotype, marker) and the QC columns.
+        :rtype: pandas.DataFrame
+        """
+        X = adata.layers[layer] if (layer and layer in adata.layers) else adata.X
+        X = numpy.asarray(X.todense()) if hasattr(X, "todense") else numpy.asarray(X)
+        u2i = {str(g).upper(): i for i, g in enumerate(adata.var.index)}
+
+        # provisional labels via z-scored mean marker expression argmax
+        Z = (X - X.mean(0)) / (X.std(0) + 1e-9)
+        names, cols = [], []
+        for ct, genes in phenotype_markers.items():
+            idx = [u2i[g.upper()] for g in genes if g.upper() in u2i]
+            if idx:
+                names.append(ct)
+                cols.append(Z[:, idx].mean(1))
+        prov = (numpy.array([names[i] for i in numpy.stack(cols, 1).argmax(1)])
+                if cols else numpy.array(["?"] * adata.n_obs))
+
+        ct_list = list(phenotype_markers)
+        type_mean = {ct: X[prov == ct].mean(0) if (prov == ct).any() else numpy.zeros(X.shape[1])
+                     for ct in ct_list}
+        global_mean = X.mean(0) + 1e-9
+        frac_expr = (X > 0).mean(0)
+        K = max(len(ct_list), 2)
+
+        def tau(gi):
+            vals = numpy.array([type_mean[c][gi] for c in ct_list], dtype=float)
+            mx = vals.max()
+            if mx <= 0:
+                return 0.0
+            return float(numpy.sum(1.0 - vals / mx) / (K - 1))
+
+        rows = []
+        usable = collections.Counter()
+        for ct, genes in phenotype_markers.items():
+            for g in genes:
+                gi = u2i.get(g.upper())
+                if gi is None:
+                    rows.append(dict(phenotype=ct, marker=g, in_panel=False, mean_expr=numpy.nan,
+                                     frac_expressing=numpy.nan, enrichment=numpy.nan,
+                                     specificity=numpy.nan, top_type=None, flag="absent"))
+                    continue
+                usable[ct] += 1
+                spec = tau(gi)
+                top = max(ct_list, key=lambda c: type_mean[c][gi])
+                flag = "ok"
+                if top != ct:
+                    flag = f"off_target(>{top})"
+                elif spec < specificity_threshold:
+                    flag = "low_specificity"
+                rows.append(dict(phenotype=ct, marker=g, in_panel=True,
+                                 mean_expr=round(float(X[:, gi].mean()), 4),
+                                 frac_expressing=round(float(frac_expr[gi]), 3),
+                                 enrichment=round(float(type_mean[ct][gi] / global_mean[gi]), 3),
+                                 specificity=round(spec, 3), top_type=top, flag=flag))
+        df = pandas.DataFrame(rows)
+        if verbose:
+            for ct in phenotype_markers:
+                if usable[ct] < min_markers:
+                    logger.warning(f"Phenotype '{ct}' has only {usable[ct]} usable marker(s) "
+                                   f"(< {min_markers}); assignment will be unreliable.")
+            for _, r in df[df["flag"].isin(["low_specificity"]) | df["flag"].str.startswith("off_target")].iterrows():
+                logger.warning(f"Marker '{r['marker']}' for '{r['phenotype']}': {r['flag']} "
+                               f"(specificity={r['specificity']}, highest in {r['top_type']}).")
+            for _, r in df[df["flag"] == "absent"].iterrows():
+                logger.warning(f"Marker '{r['marker']}' for '{r['phenotype']}' not in panel.")
+        return df
 
 
     def cluster(self, adata, up_markers, down_markers=dict()):

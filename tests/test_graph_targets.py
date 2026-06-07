@@ -6,7 +6,11 @@ import pytest
 from scipy.sparse import csr_matrix
 
 from genevector.metrics import TARGETS
-from genevector._graph_targets import target_graph_xcorr
+from genevector._graph_targets import (
+    target_graph_xcorr,
+    target_graph_mi,
+    target_graph_cross_mi,
+)
 
 
 # ─── Shared fixtures ──────────────────────────────────────────
@@ -123,3 +127,120 @@ def test_graph_xcorr_with_sparse_X():
     for g1 in genes:
         for g2 in scores_dense[g1]:
             assert scores_dense[g1][g2] == pytest.approx(scores_sparse[g1][g2])
+
+
+# ─── graph_mi (symmetric) and graph_cross_mi (asymmetric) ─────
+
+def _make_chain_panel(n=60):
+    # chain graph; a spatial gradient shared by A and B (co-located), C is the same
+    # marginal with the spatial structure destroyed. Continuous + mostly nonzero so the
+    # MI mask keeps cells.
+    row = list(range(n - 1)) + list(range(1, n))
+    col = list(range(1, n)) + list(range(n - 1))
+    adj = csr_matrix(([1.0] * len(row), (row, col)), shape=(n, n))
+    rng = np.random.default_rng(0)
+    grad = np.linspace(1.0, 6.0, n)
+    gene_a = np.clip(grad + rng.normal(0, 0.2, n), 0, None)
+    gene_b = np.clip(grad + rng.normal(0, 0.2, n), 0, None)  # co-located with A
+    gene_c = rng.permutation(grad)                            # no spatial structure
+    X = np.column_stack([gene_a, gene_b, gene_c])
+    return X, adj, ["A", "B", "C"]
+
+
+def test_graph_mi_registered():
+    assert "graph_mi" in TARGETS
+    assert "graph_cross_mi" in TARGETS
+
+
+def test_graph_mi_requires_graph():
+    X = np.array([[1, 2], [3, 4]], dtype=np.float64)
+    with pytest.raises(ValueError, match="graph required"):
+        target_graph_mi(X, ["a", "b"])
+    with pytest.raises(ValueError, match="graph required"):
+        target_graph_cross_mi(X, ["a", "b"])
+
+
+def test_graph_mi_symmetric_and_no_self():
+    X, adj, genes = _make_chain_panel()
+    scores = target_graph_mi(X, genes, graph=adj)
+    for g in genes:
+        assert g not in scores[g]
+    for g1 in genes:
+        for g2 in scores[g1]:
+            assert scores[g1][g2] == pytest.approx(scores[g2][g1], abs=1e-6)
+
+
+def test_graph_mi_detects_neighbor_coexpression():
+    # A high in even cells, B high in their chain neighbours → strong graph MI(A,B)
+    X, adj, genes = _make_chain_panel()
+    scores = target_graph_mi(X, genes, graph=adj)
+    assert abs(scores["A"]["B"]) > abs(scores["A"]["C"])
+
+
+def test_graph_mi_sparse_equals_dense():
+    X, adj, genes = _make_chain_panel(n=40)
+    sd = target_graph_mi(X, genes, graph=adj)
+    ss = target_graph_mi(csr_matrix(X), genes, graph=adj)
+    for g1 in genes:
+        for g2 in sd[g1]:
+            assert sd[g1][g2] == pytest.approx(ss[g1][g2], abs=1e-6)
+
+
+def test_graph_cross_mi_no_self_pairs():
+    X, adj, genes = _make_chain_panel()
+    scores = target_graph_cross_mi(X, genes, graph=adj)
+    for g in genes:
+        assert g not in scores[g]
+
+
+# ─── GPU (torch) graph_mi == numpy graph_mi (validated on CPU torch) ──
+
+def test_graph_mi_torch_matches_numpy():
+    pytest.importorskip("torch")
+    X, adj, genes = _make_chain_panel(n=50)
+    cpu = target_graph_mi(X, genes, graph=adj, backend="numpy")
+    gpu = target_graph_mi(X, genes, graph=adj, backend="gpu", device="cpu")
+    for g1 in genes:
+        for g2 in cpu[g1]:
+            assert cpu[g1][g2] == pytest.approx(gpu[g1][g2], abs=1e-6)
+
+
+def test_graph_cross_mi_torch_matches_numpy():
+    pytest.importorskip("torch")
+    rng = np.random.default_rng(1)
+    n, d = 80, 6
+    X = rng.poisson(1.5, size=(n, d)).astype(float)
+    adj = csr_matrix((rng.random((n, n)) < 0.2).astype(np.float64))
+    genes = [f"g{i}" for i in range(d)]
+    cpu = target_graph_cross_mi(X, genes, graph=adj, backend="numpy")
+    gpu = target_graph_cross_mi(X, genes, graph=adj, backend="gpu", device="cpu")
+    for g1 in genes:
+        for g2 in cpu[g1]:
+            assert cpu[g1][g2] == pytest.approx(gpu[g1][g2], abs=1e-6)
+
+
+def test_cross_mi_torch_chunking_consistent():
+    pytest.importorskip("torch")
+    from genevector._graph_targets import _cross_mi_matrix, _cross_mi_matrix_torch
+    from genevector.metrics import discretize_genes
+    rng = np.random.default_rng(2)
+    X = rng.poisson(1.0, size=(120, 8)).astype(float)
+    Ad, na = discretize_genes(X)
+    Bd, nb = discretize_genes(X + rng.poisson(0.5, X.shape))
+    ref = _cross_mi_matrix(Ad, na, Bd, nb)
+    full = _cross_mi_matrix_torch(Ad, na, Bd, nb, device="cpu", max_elems=10**9)
+    chunked = _cross_mi_matrix_torch(Ad, na, Bd, nb, device="cpu", max_elems=120 * 2)
+    np.testing.assert_allclose(ref, full, atol=1e-6)
+    np.testing.assert_allclose(ref, chunked, atol=1e-6)
+
+
+def test_graph_mi_rust_matches_numpy():
+    from genevector.metrics import HAS_RUST
+    if not HAS_RUST:
+        pytest.skip("rust extension (_rust) not built")
+    X, adj, genes = _make_chain_panel(n=60)
+    cpu = target_graph_mi(X, genes, graph=adj, backend="numpy")
+    rust = target_graph_mi(X, genes, graph=adj, backend="rust")
+    for g1 in genes:
+        for g2 in cpu[g1]:
+            assert cpu[g1][g2] == pytest.approx(rust[g1][g2], abs=1e-6)
